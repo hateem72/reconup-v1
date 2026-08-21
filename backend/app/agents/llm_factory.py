@@ -1,13 +1,12 @@
 import os
 from typing import Optional
-from langchain_community.llms import Ollama
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage, AIMessage
 
 class MockFinanceLLM:
-    """Fallback Mock LLM when Ollama is unavailable during unit testing."""
-    def invoke(self, input_data: str) -> AIMessage:
-        return AIMessage(content="Financial analysis completed based on deterministic facts. No hallucinated records.")
+    """Fallback Mock LLM when Ollama or langchain-community is unavailable."""
+    def invoke(self, input_data: str):
+        class MockMessage:
+            content = "Financial analysis completed based on deterministic facts. No hallucinated records."
+        return MockMessage()
 
     def bind_tools(self, tools: list):
         return self
@@ -20,6 +19,7 @@ def get_llm(model_name: Optional[str] = None, temperature: float = 0.0):
     target_model = model_name or os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
     try:
+        from langchain_community.llms import Ollama
         llm = Ollama(
             base_url=base_url,
             model=target_model,
