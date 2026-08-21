@@ -1,47 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import MetricsCards from './components/MetricsCards';
+import ReconciliationFunnel from './components/ReconciliationFunnel';
 import UploadSection from './components/UploadSection';
 import ReconciliationTable from './components/ReconciliationTable';
+import SkuBreakdown from './components/SkuBreakdown';
 import ExceptionQueue from './components/ExceptionQueue';
 import RuleRegistryModal from './components/RuleRegistryModal';
 import FinanceQAChat from './components/FinanceQAChat';
+import { Sparkles, Terminal, Activity, ArrowRight } from 'lucide-react';
 
 export default function App() {
   const [activeBatchId, setActiveBatchId] = useState(null);
   const [batchMetrics, setBatchMetrics] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [skuBreakdown, setSkuBreakdown] = useState(null);
   const [reconciliation, setReconciliation] = useState(null);
   const [exceptions, setExceptions] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('reconciliation');
 
-  // Auto-run synthetic demo on initial load for instant wow effect
   useEffect(() => {
     runSyntheticDemo();
   }, []);
 
   const fetchBatchData = async (batchId) => {
     try {
-      // 1. Details
       const detailsRes = await fetch(`/api/batches/${batchId}`);
       const details = await detailsRes.json();
       setSummary(details.summary || {});
 
-      // 2. Reconciliation
       const recRes = await fetch(`/api/batches/${batchId}/reconciliation`);
       const recData = await recRes.json();
       setReconciliation(recData);
 
-      // 3. Exceptions
       const excRes = await fetch(`/api/batches/${batchId}/exceptions`);
       const excData = await excRes.json();
       setExceptions(excData.exceptions || []);
 
-      // 4. Report metrics
       const reportRes = await fetch(`/api/batches/${batchId}/report`);
       if (reportRes.ok) {
         const reportData = await reportRes.json();
+        setSkuBreakdown(reportData.sku_breakdown || {});
         setBatchMetrics({
           match_rate: reportData.match_rate,
           records_matched: recData.matched_count,
@@ -67,7 +68,6 @@ export default function App() {
   const runSyntheticDemo = async () => {
     setIsProcessing(true);
     try {
-      // Create synthetic demo batch via paste text CSV
       const sampleCsv = `Sub Order No\tStatus\tAmount
 ORD-1001\tDelivered\t250
 ORD-1002\tReturn\t-50
@@ -106,31 +106,47 @@ ORD-1010\tCancelled\t200`;
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0B0F19] text-gray-100">
+    <div className="min-h-screen flex flex-col bg-[#07090E] text-gray-100">
       <Navbar
         onOpenRules={() => setIsRuleModalOpen(true)}
         onRunDemo={runSyntheticDemo}
         isProcessing={isProcessing}
+        activeBatchId={activeBatchId}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
-        {/* Banner */}
-        <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-blue-900/30 via-indigo-900/20 to-purple-900/30 border border-blue-500/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              Live Hackathon Demonstration
-            </span>
-            <h2 className="text-xl font-bold text-white mt-2">
-              Autonomous Financial Reconciliation & Governance Controller
-            </h2>
-            <p className="text-xs text-gray-300 mt-1 max-w-2xl">
-              Processes 50+ to 500+ record batches of synthetic marketplace settlements, calculates deterministic P&L, surface unknown deduction patterns for human verification, and persists learned rules.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <div className="text-xs text-gray-400">Current Active Batch</div>
-              <div className="text-sm font-mono font-bold text-blue-400">{activeBatchId || '—'}</div>
+        {/* Banner Hero */}
+        <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-blue-900/30 via-indigo-900/20 to-purple-900/30 border border-blue-500/20 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  Hackathon Product Benchmark
+                </span>
+                <span className="text-xs text-gray-400 font-mono flex items-center gap-1">
+                  <Activity className="w-3.5 h-3.5 text-emerald-400 pulse-dot" />
+                  31,770+ rec/sec Engine
+                </span>
+              </div>
+              <h2 className="text-2xl font-extrabold text-white tracking-tight">
+                Autonomous Finance Controller & Governance Loop
+              </h2>
+              <p className="text-xs text-gray-300 mt-1 max-w-2xl leading-relaxed">
+                Processes 50+ to 500+ record batches of synthetic marketplace settlements, calculates deterministic profit & loss, surfaces unknown deduction patterns for human verification, and persists learned rules into database registry.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={runSyntheticDemo}
+                disabled={isProcessing}
+                className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg glow-blue flex items-center gap-2 disabled:opacity-50 transition"
+              >
+                <Sparkles className="w-4 h-4" />
+                Run Synthetic Demo Batch
+              </button>
             </div>
           </div>
         </div>
@@ -138,7 +154,10 @@ ORD-1010\tCancelled\t200`;
         {/* Top Metrics Cards */}
         <MetricsCards metrics={batchMetrics} summary={summary} />
 
-        {/* Upload Section */}
+        {/* Reconciliation Visual Funnel Bar */}
+        <ReconciliationFunnel reconciliation={reconciliation} />
+
+        {/* File Ingestion */}
         <UploadSection onUploadSuccess={handleUploadSuccess} isProcessing={isProcessing} />
 
         {/* Human Governance Queue */}
@@ -148,10 +167,30 @@ ORD-1010\tCancelled\t200`;
           onExceptionResolved={handleExceptionResolved}
         />
 
-        {/* Grid Layout: Table & Q&A */}
+        {/* Data View Selector Tabs */}
+        <div className="flex items-center gap-2 mb-4 border-b border-gray-800 pb-2 text-xs font-semibold">
+          <button
+            onClick={() => setActiveTab('reconciliation')}
+            className={`px-4 py-2 rounded-xl transition ${activeTab === 'reconciliation' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white bg-gray-900/60'}`}
+          >
+            Order Reconciliation Table
+          </button>
+          <button
+            onClick={() => setActiveTab('sku')}
+            className={`px-4 py-2 rounded-xl transition ${activeTab === 'sku' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white bg-gray-900/60'}`}
+          >
+            SKU Profit Analysis
+          </button>
+        </div>
+
+        {/* Grid Layout: Main Table/SKU & Q&A Assistant */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
-            <ReconciliationTable reconciliation={reconciliation} />
+            {activeTab === 'reconciliation' ? (
+              <ReconciliationTable reconciliation={reconciliation} />
+            ) : (
+              <SkuBreakdown skuBreakdown={skuBreakdown} />
+            )}
           </div>
           <div className="lg:col-span-1">
             <FinanceQAChat batchId={activeBatchId} />
@@ -159,7 +198,7 @@ ORD-1010\tCancelled\t200`;
         </div>
       </main>
 
-      <footer className="border-t border-gray-800 py-6 text-center text-xs text-gray-500">
+      <footer className="border-t border-gray-800/80 py-6 text-center text-xs text-gray-500 bg-[#07090E]">
         Agentic AI Finance Controller — Track 04 Hackathon System • Built with FastAPI, LangGraph & React
       </footer>
 
