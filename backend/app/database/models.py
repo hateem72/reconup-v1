@@ -27,7 +27,7 @@ class ReconciliationResultModel(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     batch_id = Column(String, ForeignKey("batches.id"), index=True)
     order_id = Column(String, index=True)
-    match_status = Column(String, index=True) # MATCHED, MISSING_PAYMENT, MISSING_ORDER, etc.
+    match_status = Column(String, index=True)
     order_status = Column(String, default="")
     payment_status = Column(String, default="")
     payment_amount = Column(Float, default=0.0)
@@ -45,7 +45,7 @@ class ExceptionModel(Base):
     batch_id = Column(String, ForeignKey("batches.id"), index=True)
     record_id = Column(String, index=True)
     order_id = Column(String, index=True)
-    exception_type = Column(String, index=True) # UNKNOWN_DEDUCTION, MISSING_PAYMENT, AMOUNT_MISMATCH, etc.
+    exception_type = Column(String, index=True) # UNKNOWN_DEDUCTION, MISSING_PAYMENT, MISSING_COST_PRICE, etc.
     raw_status = Column(String, default="")
     amount = Column(Float, default=0.0)
     description = Column(Text, default="")
@@ -64,15 +64,25 @@ class RuleRegistryModel(Base):
     __tablename__ = "rule_registry"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pattern = Column(String, unique=True, index=True) # e.g. "return assurance fee"
+    pattern = Column(String, unique=True, index=True)
     normalized_category = Column(String, default="")
-    financial_effect = Column(String, default="SUBTRACT") # ADD, SUBTRACT, NEUTRAL
-    amount_behavior = Column(String, default="DEDUCTION") # REVENUE, DEDUCTION, PENALTY, CREDIT, ZERO_AMOUNT
-    applies_to = Column(String, default="ALL") # DELIVERED, RETURN, ALL
+    financial_effect = Column(String, default="SUBTRACT")
+    amount_behavior = Column(String, default="DEDUCTION")
+    applies_to = Column(String, default="ALL")
     confidence = Column(Float, default=1.0)
-    created_by = Column(String, default="human") # system, human, agent
+    created_by = Column(String, default="human")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     active = Column(Boolean, default=True, index=True)
+
+
+class SkuCostModel(Base):
+    __tablename__ = "sku_costs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sku_id = Column(String, unique=True, index=True)
+    cost_price = Column(Float, default=0.0)
+    packaging_cost = Column(Float, default=0.0)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 class AgentDecisionModel(Base):

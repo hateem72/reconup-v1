@@ -22,7 +22,7 @@ async def create_and_process_batch(
 ):
     """
     Creates a new batch, parses spreadsheet files, runs reconciliation, profit calculations,
-    and exception detection asynchronously or inline.
+    and exception detection using database SKU cost registry.
     """
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
@@ -33,7 +33,6 @@ async def create_and_process_batch(
 
     parsed_orders = []
     parsed_payments = []
-    errors = []
 
     if file:
         content = await file.read()
@@ -66,9 +65,10 @@ async def create_and_process_batch(
     reconciliation_res = process_reconciliation(parsed_orders, parsed_payments)
     repo.save_reconciliation_results(batch_id, reconciliation_res.get("matched", []))
 
-    # 2. Profit Calculation
+    # 2. Profit Calculation using DB SKU Cost Price Registry
+    sku_costs_map = repo.get_sku_costs_map()
     grouped = group_by_sku(parsed_orders)
-    profit_res = calculate_overall_profit(grouped)
+    profit_res = calculate_overall_profit(grouped, sku_costs_map)
 
     # 3. Exceptions & Rules
     rules = [
@@ -81,12 +81,29 @@ async def create_and_process_batch(
         for r in repo.get_all_rules(active_only=True)
     ]
     exceptions = evaluate_batch_exceptions(parsed_orders, reconciliation_res, rules)
+
+    # 4. Check if any SKU in batch is missing cost price
+    for sku_id in grouped.keys():
+        unit_cost = sku_costs_map.get(sku_id, 0.0)
+        if unit_cost <= 0:
+            exceptions.append({
+                "record_id": f"cost-{sku_id}",
+                "order_id": "N/A",
+                "exception_type": "MISSING_COST_PRICE",
+                "raw_status": f"SKU {sku_id}",
+                "amount": 0.0,
+                "description": f"SKU '{sku_id}' is missing unit cost price. Please configure unit cost to accurately calculate profit.",
+                "confidence": 1.0,
+                "status": "PENDING",
+                "requires_human": True
+            })
+
     repo.save_exceptions(batch_id, exceptions)
 
     end_time = time.time()
     processing_time_ms = (end_time - start_time) * 1000.0
 
-    # 4. Metrics & Report
+    # 5. Metrics & Report
     metrics = calculate_batch_metrics(batch_id, total_records, reconciliation_res, exceptions, profit_res, processing_time_ms)
     repo.save_report(batch_id, "PROFIT_AND_RECONCILIATION", metrics, profit_res.get("overall", {}), profit_res.get("skuBreakdowns", {}))
 

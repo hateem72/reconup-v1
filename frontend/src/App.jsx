@@ -7,8 +7,9 @@ import ReconciliationTable from './components/ReconciliationTable';
 import SkuBreakdown from './components/SkuBreakdown';
 import ExceptionQueue from './components/ExceptionQueue';
 import RuleRegistryModal from './components/RuleRegistryModal';
+import CostPriceModal from './components/CostPriceModal';
 import FinanceQAChat from './components/FinanceQAChat';
-import { Sparkles, Terminal, Activity, ArrowRight } from 'lucide-react';
+import { Sparkles, Activity, DollarSign, AlertCircle } from 'lucide-react';
 
 export default function App() {
   const [activeBatchId, setActiveBatchId] = useState(null);
@@ -19,6 +20,7 @@ export default function App() {
   const [exceptions, setExceptions] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
+  const [isCostModalOpen, setIsCostModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('reconciliation');
 
   useEffect(() => {
@@ -105,16 +107,41 @@ ORD-1010\tCancelled\t200`;
     }
   };
 
+  const missingCostExceptions = exceptions.filter(e => e.exception_type === 'MISSING_COST_PRICE' && e.status === 'PENDING');
+
   return (
     <div className="min-h-screen flex flex-col bg-[#07090E] text-gray-100">
       <Navbar
         onOpenRules={() => setIsRuleModalOpen(true)}
+        onOpenCosts={() => setIsCostModalOpen(true)}
         onRunDemo={runSyntheticDemo}
         isProcessing={isProcessing}
         activeBatchId={activeBatchId}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
+        {/* Missing Cost Warning Banner */}
+        {missingCostExceptions.length > 0 && (
+          <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+              <div>
+                <h4 className="text-xs font-bold text-amber-200">SKU Unit Cost Prices Required</h4>
+                <p className="text-xs text-amber-300/80">
+                  {missingCostExceptions.length} SKUs in this batch have zero/missing cost prices. Configure unit costs to enable accurate P&L calculation.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsCostModalOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-500 text-gray-950 text-xs font-bold flex items-center gap-1.5 hover:bg-amber-400 transition shrink-0"
+            >
+              <DollarSign className="w-4 h-4" />
+              Configure SKU Cost Prices
+            </button>
+          </div>
+        )}
+
         {/* Banner Hero */}
         <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-blue-900/30 via-indigo-900/20 to-purple-900/30 border border-blue-500/20 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
@@ -139,6 +166,13 @@ ORD-1010\tCancelled\t200`;
             </div>
 
             <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={() => setIsCostModalOpen(true)}
+                className="px-3.5 py-2.5 bg-gray-900 hover:bg-gray-800 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+              >
+                <DollarSign className="w-4 h-4 text-emerald-400" />
+                Configure Unit Costs
+              </button>
               <button
                 onClick={runSyntheticDemo}
                 disabled={isProcessing}
@@ -202,10 +236,18 @@ ORD-1010\tCancelled\t200`;
         Agentic AI Finance Controller — Track 04 Hackathon System • Built with FastAPI, LangGraph & React
       </footer>
 
-      {/* Rule Registry Modal */}
+      {/* Modals */}
       <RuleRegistryModal
         isOpen={isRuleModalOpen}
         onClose={() => setIsRuleModalOpen(false)}
+      />
+
+      <CostPriceModal
+        isOpen={isCostModalOpen}
+        onClose={() => setIsCostModalOpen(false)}
+        batchId={activeBatchId}
+        skuBreakdown={skuBreakdown}
+        onCostsUpdated={() => fetchBatchData(activeBatchId)}
       />
     </div>
   );

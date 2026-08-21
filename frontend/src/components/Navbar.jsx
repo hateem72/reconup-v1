@@ -1,7 +1,7 @@
 import React from 'react';
-import { ShieldCheck, Cpu, BookOpen, RefreshCw, Activity, Terminal } from 'lucide-react';
+import { ShieldCheck, Cpu, BookOpen, RefreshCw, Activity, Terminal, DollarSign } from 'lucide-react';
 
-export default function Navbar({ onOpenRules, onRunDemo, isProcessing, activeBatchId }) {
+export default function Navbar({ onOpenRules, onOpenCosts, onRunDemo, isProcessing, activeBatchId }) {
   return (
     <header className="border-b border-gray-800/80 bg-[#0B0F17]/90 backdrop-blur-xl sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
@@ -40,6 +40,14 @@ export default function Navbar({ onOpenRules, onRunDemo, isProcessing, activeBat
             <Activity className="w-3.5 h-3.5 text-emerald-400 pulse-dot" />
             <span className="font-medium">Deterministic Engine Active</span>
           </div>
+
+          <button
+            onClick={onOpenCosts}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-gray-900 hover:bg-gray-800 text-emerald-300 border border-emerald-500/30 transition shadow-sm hover:border-emerald-500/50"
+          >
+            <DollarSign className="w-4 h-4 text-emerald-400" />
+            Set SKU Costs
+          </button>
 
           <button
             onClick={onOpenRules}

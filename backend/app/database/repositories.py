@@ -6,6 +6,7 @@ from app.database.models import (
     ReconciliationResultModel,
     ExceptionModel,
     RuleRegistryModel,
+    SkuCostModel,
     AgentDecisionModel,
     ReportModel
 )
@@ -146,6 +147,40 @@ class FinanceRepository:
             self.db.commit()
             self.db.refresh(rule)
             return rule
+
+    # ── SKU Cost Registry ──────────────────────────────────────────
+    def get_all_sku_costs(self) -> List[SkuCostModel]:
+        return self.db.query(SkuCostModel).all()
+
+    def get_sku_costs_map(self) -> Dict[str, float]:
+        costs = {}
+        for item in self.get_all_sku_costs():
+            total = float(item.cost_price) + float(item.packaging_cost)
+            costs[item.sku_id] = total
+            costs[f"cp_{item.sku_id}"] = float(item.cost_price)
+            costs[f"pkg_{item.sku_id}"] = float(item.packaging_cost)
+        return costs
+
+    def save_sku_cost(self, sku_id: str, cost_price: float, packaging_cost: float = 0.0) -> SkuCostModel:
+        clean_sku = sku_id.strip()
+        existing = self.db.query(SkuCostModel).filter(SkuCostModel.sku_id == clean_sku).first()
+        if existing:
+            existing.cost_price = float(cost_price)
+            existing.packaging_cost = float(packaging_cost)
+            existing.updated_at = datetime.datetime.utcnow()
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
+        else:
+            sc = SkuCostModel(
+                sku_id=clean_sku,
+                cost_price=float(cost_price),
+                packaging_cost=float(packaging_cost)
+            )
+            self.db.add(sc)
+            self.db.commit()
+            self.db.refresh(sc)
+            return sc
 
     # ── Agent Decisions Audit ─────────────────────────────────────
     def log_agent_decision(self, batch_id: str, exception_id: str, decision_type: str, decision: str, confidence: float, reasoning: str, context: Dict[str, Any] = None) -> AgentDecisionModel:
