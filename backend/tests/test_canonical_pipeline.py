@@ -59,9 +59,10 @@ def test_header_detection():
         ["Sub Order No", "Seller SKU", "Quantity"],
         ["ORD101", "SKU-A", 1]
     ])
-    header_idx, data_idx = detect_header_and_data_rows(df)
+    header_idx, data_idx, exact_headers = detect_header_and_data_rows(df)
     assert header_idx == 2
     assert data_idx == 3
+    assert "Sub Order No" in exact_headers
 
 def test_order_auto_mapping_and_validation():
     headers = ["Sub Order Number", "Seller SKU", "Units", "Live Order Status"]

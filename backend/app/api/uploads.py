@@ -23,15 +23,13 @@ async def create_and_process_batch(
     db: Session = Depends(get_db)
 ):
     """
-    Creates a new batch and EXECUTES NODE 1 ONLY (Ingest & Sheet Profiling).
-    Stops execution right after Node 1 and returns the Node 1 sheet profiles
-    for human review before proceeding to Node 2.
+    Creates a new batch and EXECUTES NODE 1 ONLY (Ingest & Exact Header Profiling).
+    Extracts exact unaltered column header names from the true header row.
     """
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
     repo = FinanceRepository(db)
 
-    # Parse role map if sent as JSON string
     file_roles_map = {}
     if file_roles_json:
         try:
@@ -47,7 +45,6 @@ async def create_and_process_batch(
     if payment_files:
         payment_upload_list.extend(payment_files)
 
-    # Handle fallback files parameter
     if files:
         for f in files:
             role = file_roles_map.get(f.filename, "").upper()
@@ -72,7 +69,7 @@ async def create_and_process_batch(
     filenames_summary = ", ".join([f.filename for f in all_upload_files]) if all_upload_files else "pasted_clipboard_data.csv"
     
     print("\n" + "="*80)
-    print(f"  [NODE 1 EXCLUSIVE EXECUTION] NEW BATCH CREATED: {batch_id}")
+    print(f"  [NODE 1 EXACT HEADER PROFILING] NEW BATCH CREATED: {batch_id}")
     print(f"  [ORDER FILES ({len(order_upload_list)})]: {[f.filename for f in order_upload_list]}")
     print(f"  [PAYMENT FILES ({len(payment_upload_list)})]: {[f.filename for f in payment_upload_list]}")
     print("="*80 + "\n")
@@ -98,12 +95,19 @@ async def create_and_process_batch(
         elif fname.endswith((".xlsx", ".xls")):
             res = parse_excel_bytes(content, fname)
             if res["success"]:
-                parsed_datasets.append({"filename": fname, "role": "MASTER ORDER SHEET", "data": res["data"]})
+                for s in res.get("sheets", []):
+                    parsed_datasets.append({
+                        "filename": f"{fname} [{s['sheet_name']}]",
+                        "role": "MASTER ORDER SHEET",
+                        "data": s["data"],
+                        "header_row_index": s.get("header_row_index", 1),
+                        "exact_headers": s.get("exact_headers", [])
+                    })
         else:
             raw_text = content.decode("utf-8", errors="ignore")
             res = parse_csv_data(raw_text)
             if res["success"]:
-                parsed_datasets.append({"filename": fname, "role": "MASTER ORDER SHEET", "data": res["data"]})
+                parsed_datasets.append({"filename": fname, "role": "MASTER ORDER SHEET", "data": res["data"], "header_row_index": 1})
 
     # 2. PROCESS EXPLICIT PAYMENT FILES FOR NODE 1
     for up_file in payment_upload_list:
@@ -119,25 +123,32 @@ async def create_and_process_batch(
         elif fname.endswith((".xlsx", ".xls")):
             res = parse_excel_bytes(content, fname)
             if res["success"]:
-                parsed_datasets.append({"filename": fname, "role": "PAYMENT SETTLEMENT SHEET", "data": res["data"]})
+                for s in res.get("sheets", []):
+                    parsed_datasets.append({
+                        "filename": f"{fname} [{s['sheet_name']}]",
+                        "role": "PAYMENT SETTLEMENT SHEET",
+                        "data": s["data"],
+                        "header_row_index": s.get("header_row_index", 1),
+                        "exact_headers": s.get("exact_headers", [])
+                    })
         else:
             raw_text = content.decode("utf-8", errors="ignore")
             res = parse_csv_data(raw_text)
             if res["success"]:
-                parsed_datasets.append({"filename": fname, "role": "PAYMENT SETTLEMENT SHEET", "data": res["data"]})
+                parsed_datasets.append({"filename": fname, "role": "PAYMENT SETTLEMENT SHEET", "data": res["data"], "header_row_index": 1})
 
     # Fallback to pasted CSV
     if not all_upload_files and raw_csv:
         res = parse_csv_data(raw_csv)
         if res["success"]:
-            parsed_datasets.append({"filename": "pasted_clipboard_data.csv", "role": "MASTER ORDER SHEET", "data": res["data"]})
+            parsed_datasets.append({"filename": "pasted_clipboard_data.csv", "role": "MASTER ORDER SHEET", "data": res["data"], "header_row_index": 1})
             files_info.append({"filename": "pasted_clipboard_data.csv", "size": len(raw_csv), "role": "MASTER ORDER SHEET"})
 
     if not parsed_datasets:
         raise HTTPException(status_code=400, detail="Please upload valid Order or Payment spreadsheet files.")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # EXECUTE NODE 1 ONLY (INGEST & SHEET PROFILING)
+    # EXECUTE NODE 1 ONLY (INGEST & EXACT HEADER PROFILING)
     # ─────────────────────────────────────────────────────────────────────────
     node1_state = {
         "batch_id": batch_id,
@@ -153,12 +164,12 @@ async def create_and_process_batch(
     processing_time_ms = (end_time - start_time) * 1000.0
 
     repo.update_batch_status(batch_id, "NODE_1_COMPLETE", processed_records=total_records, processing_time_ms=processing_time_ms)
-    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_1_INGEST", f"Node 1 complete. Profiled {len(node1_result.get('sheet_profiles', []))} sheets.")
+    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_1_INGEST", f"Node 1 complete. Profiled {len(node1_result.get('sheet_profiles', []))} sheets with exact headers.")
 
     print("\n" + "="*80)
     print(f"  [NODE 1 EXECUTION STOPPED AS REQUESTED]")
     print(f"  [BATCH ID] {batch_id}")
-    print(f"  [STATUS] NODE_1_COMPLETE — Ready for your verification!")
+    print(f"  [STATUS] NODE_1_COMPLETE — Ready for your exact header verification!")
     print("="*80 + "\n")
 
     return {
