@@ -21,15 +21,25 @@ def auto_map_payment_columns(headers: List[str]) -> Dict[str, str]:
 
     for canonical_field, keywords in CANONICAL_PAYMENT_KEYWORDS.items():
         matched_col = ""
+        # 1. Exact match
         for kw in keywords:
             for idx, h_lower in enumerate(lower_headers):
                 if h_lower == kw:
                     matched_col = headers[idx]
                     break
-                elif kw in h_lower and not matched_col:
-                    matched_col = headers[idx]
-            if matched_col and (kw in lower_headers and headers[lower_headers.index(kw)] == matched_col if kw in lower_headers else True):
+            if matched_col:
                 break
+
+        # 2. Substring match
+        if not matched_col:
+            for kw in keywords:
+                for idx, h_lower in enumerate(lower_headers):
+                    if kw in h_lower:
+                        matched_col = headers[idx]
+                        break
+                if matched_col:
+                    break
+
         if matched_col:
             mapping[canonical_field] = matched_col
 

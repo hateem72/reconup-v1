@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.database.repositories import FinanceRepository
 from app.finance.parser import parse_csv_data, parse_excel_bytes, parse_zip_file
-from app.agents.nodes import ingest_node, sheet_filtering_node, validation_node, normalization_node, pattern_detection_node
+from app.agents.nodes import ingest_node, sheet_filtering_node, validation_node, normalization_node, pattern_detection_node, reconciliation_node
 from app.core.logging import log_stage
 
 router = APIRouter()
@@ -23,13 +23,13 @@ async def create_and_process_batch(
     db: Session = Depends(get_db)
 ):
     """
-    Creates a new batch and EXECUTES:
+    Creates a new batch and EXECUTES FULL CHAIN:
     - NODE 1 (Ingest & Header Profiling)
     - NODE 1.5 (AI Sheet Relevance & Sub-Tab Filtering)
     - NODE 2 (LLM Column Mapping & Validation)
     - NODE 3 (LLM Status Classification & Canonical Normalization)
     - NODE 4 (Status Integrity Repair & Deduction/Credit Classification)
-    Stops after Node 4 for step-by-step human verification.
+    - NODE 5 (Deterministic Order-Payment Reconciliation Engine)
     """
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
@@ -210,29 +210,41 @@ async def create_and_process_batch(
     if canonical_payments:
         repo.save_canonical_payments(batch_id, canonical_payments)
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # 5. EXECUTE NODE 5: DETERMINISTIC ORDER-PAYMENT RECONCILIATION ENGINE
+    # ─────────────────────────────────────────────────────────────────────────
+    node5_state = {
+        "batch_id": batch_id,
+        "canonical_orders": canonical_orders,
+        "canonical_payments": canonical_payments
+    }
+    node5_result = reconciliation_node(node5_state)
+
     total_records = len(canonical_orders)
     batch.total_records = total_records
     
     end_time = time.time()
     processing_time_ms = (end_time - start_time) * 1000.0
 
-    repo.update_batch_status(batch_id, "NODE_4_COMPLETE", processed_records=total_records, processing_time_ms=processing_time_ms)
-    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_4_INTEGRITY", f"Node 4 complete. Audit verified 100% status coverage across {len(canonical_orders)} orders and {len(canonical_payments)} payments.")
+    repo.update_batch_status(batch_id, "NODE_5_RECONCILED", processed_records=total_records, processing_time_ms=processing_time_ms)
+    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_5_RECONCILIATION", f"Node 5 complete. Reconciliation Match Rate: {node5_result.get('match_rate', 0.0)}%")
 
     print("\n" + "="*80)
-    print(f"  [NODE 1 ──▶ NODE 1.5 (AI FILTERING) ──▶ NODE 2 ──▶ NODE 3 ──▶ NODE 4 CHAIN COMPLETE]")
+    print(f"  [NODE 1 ──▶ NODE 1.5 ──▶ NODE 2 ──▶ NODE 3 ──▶ NODE 4 ──▶ NODE 5 CHAIN COMPLETE]")
     print(f"  [BATCH ID] {batch_id}")
-    print(f"  [STATUS] NODE_4_COMPLETE — Ready for your verification!")
+    print(f"  [MATCH RATE] {node5_result.get('match_rate', 0.0)}%")
+    print(f"  [STATUS] NODE_5_RECONCILED — Fully reconciled & ready for P&L / Governance!")
     print("="*80 + "\n")
 
     return {
         "batch_id": batch_id,
-        "status": "NODE_4_COMPLETE",
+        "status": "NODE_5_RECONCILED",
         "node_1_status": "COMPLETED",
         "node_relevance_status": "COMPLETED",
         "node_2_status": "COMPLETED",
         "node_3_status": "COMPLETED",
         "node_4_status": "COMPLETED",
+        "node_5_status": "COMPLETED",
         "retained_sheets_count": len(essential_datasets),
         "dropped_sheets_count": len(filtering_result.get("dropped_datasets", [])),
         "canonical_orders_count": len(canonical_orders),
@@ -240,6 +252,7 @@ async def create_and_process_batch(
         "repaired_orders_count": node4_result.get("repaired_orders_count", 0),
         "classified_deductions_count": node4_result.get("classified_deductions_count", 0),
         "classified_credits_count": node4_result.get("classified_credits_count", 0),
+        "match_rate": node5_result.get("match_rate", 0.0),
         "processing_time_ms": round(processing_time_ms, 2)
     }
 
@@ -269,7 +282,7 @@ def get_batch_progress(batch_id: str, db: Session = Depends(get_db)):
     batch = repo.get_batch(batch_id)
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
-    progress_pct = 100 if batch.status in ("COMPLETED", "RECONCILED", "WAITING_HUMAN_REVIEW", "NODE_1_COMPLETE", "NODE_2_COMPLETE", "NODE_3_COMPLETE", "NODE_4_COMPLETE") else int((batch.processed_records / max(batch.total_records, 1)) * 100)
+    progress_pct = 100 if batch.status in ("COMPLETED", "RECONCILED", "WAITING_HUMAN_REVIEW", "NODE_5_RECONCILED") else int((batch.processed_records / max(batch.total_records, 1)) * 100)
     return {
         "batch_id": batch.batch_id,
         "status": batch.status,
