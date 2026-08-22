@@ -1,5 +1,6 @@
 import uuid
 import time
+import json
 from typing import Optional, List, Dict, Any, Tuple
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -17,104 +18,138 @@ from app.core.logging import log_stage
 
 router = APIRouter()
 
-def classify_and_separate_datasets(parsed_datasets: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    Classifies parsed datasets into Order datasets vs Payment Settlement datasets
-    based on filename and column header keywords.
-    """
-    orders_list = []
-    payments_list = []
-
-    for item in parsed_datasets:
-        fname = item.get("filename", "").lower()
-        rows = item.get("data", [])
-        if not rows or not isinstance(rows[0], dict):
-            continue
-
-        headers_lower = [str(k).lower() for k in rows[0].keys()]
-        
-        is_payment_file = "payment" in fname or "settlement" in fname or "payout" in fname
-        is_payment_header = any("final settlement amount" in h or "reason for credit entry" in h or "payment status" in h or "settlement" in h for h in headers_lower)
-
-        if is_payment_file or is_payment_header:
-            log_stage("PROFILER", f"Classified dataset '{item.get('filename')}' as PAYMENT SETTLEMENT ({len(rows)} rows)")
-            payments_list.extend(rows)
-        else:
-            log_stage("PROFILER", f"Classified dataset '{item.get('filename')}' as MASTER ORDER SHEET ({len(rows)} rows)")
-            orders_list.extend(rows)
-
-    return orders_list, payments_list
-
-
 @router.post("/batches")
 async def create_and_process_batch(
+    order_files: Optional[List[UploadFile]] = File(None),
+    payment_files: Optional[List[UploadFile]] = File(None),
     files: Optional[List[UploadFile]] = File(None),
     file: Optional[UploadFile] = File(None),
     raw_csv: Optional[str] = Form(None),
+    file_roles_json: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
-    Creates a new batch, executes NODE 1 (Ingest & Profiling) in the backend console for human verification,
-    profiles spreadsheet columns, converts into CanonicalOrder and CanonicalPayment models,
-    and executes multi-event reconciliation.
+    Creates a new batch supporting explicit designation of Order Sheets vs Payment Settlement Sheets.
+    Executes NODE 1 (Ingest & Profiling) outputting clear file role designations in the terminal console.
     """
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
     repo = FinanceRepository(db)
 
-    # Collect all uploaded files
-    upload_list: List[UploadFile] = []
-    if files:
-        upload_list.extend(files)
-    if file and file not in upload_list:
-        upload_list.append(file)
+    # Parse role map if sent as JSON string
+    file_roles_map = {}
+    if file_roles_json:
+        try:
+            file_roles_map = json.loads(file_roles_json)
+        except Exception:
+            pass
 
-    filenames_summary = ", ".join([f.filename for f in upload_list]) if upload_list else "pasted_clipboard_data.csv"
+    order_upload_list: List[UploadFile] = []
+    payment_upload_list: List[UploadFile] = []
+
+    if order_files:
+        order_upload_list.extend(order_files)
+    if payment_files:
+        payment_upload_list.extend(payment_files)
+
+    # Handle legacy/fallback files parameter
+    if files:
+        for f in files:
+            role = file_roles_map.get(f.filename, "").upper()
+            if role == "ORDER" and f not in order_upload_list:
+                order_upload_list.append(f)
+            elif role == "PAYMENT" and f not in payment_upload_list:
+                payment_upload_list.append(f)
+            elif f not in order_upload_list and f not in payment_upload_list:
+                # Default heuristic based on filename
+                if "payment" in f.filename.lower() or "settlement" in f.filename.lower() or "payout" in f.filename.lower():
+                    payment_upload_list.append(f)
+                else:
+                    order_upload_list.append(f)
+
+    if file:
+        role = file_roles_map.get(file.filename, "").upper()
+        if role == "PAYMENT":
+            if file not in payment_upload_list: payment_upload_list.append(file)
+        else:
+            if file not in order_upload_list: order_upload_list.append(file)
+
+    all_upload_files = order_upload_list + payment_upload_list
+    filenames_summary = ", ".join([f.filename for f in all_upload_files]) if all_upload_files else "pasted_clipboard_data.csv"
+    
+    print("\n" + "="*80)
+    print(f"  [RECONCILIATION ENGINE] NEW BATCH STARTED: {batch_id}")
+    print(f"  [ORDER FILES ({len(order_upload_list)})]: {[f.filename for f in order_upload_list]}")
+    print(f"  [PAYMENT FILES ({len(payment_upload_list)})]: {[f.filename for f in payment_upload_list]}")
+    print("="*80 + "\n")
+
+    log_stage("BATCH", f"Initializing batch '{batch_id}' with {len(order_upload_list)} Order files and {len(payment_upload_list)} Payment files")
     batch = repo.create_batch(batch_id=batch_id, source_filename=filenames_summary, total_records=0)
     repo.log_audit_event(batch_id, "STAGE_START", "NODE_1_INGEST", f"Files uploaded: {filenames_summary}")
 
-    parsed_datasets: List[Dict[str, Any]] = []
+    all_parsed_orders = []
+    all_parsed_payments = []
+    parsed_datasets = []
     files_info = []
 
-    if upload_list:
-        for up_file in upload_list:
-            fname = up_file.filename or "file.csv"
-            content = await up_file.read()
-            files_info.append({"filename": fname, "size": len(content)})
+    # 1. PROCESS EXPLICIT ORDER FILES
+    for up_file in order_upload_list:
+        fname = up_file.filename or "order_file.csv"
+        content = await up_file.read()
+        files_info.append({"filename": fname, "size": len(content), "role": "MASTER ORDER SHEET"})
 
-            if fname.endswith(".zip"):
-                zip_res = parse_zip_file(content)
-                if zip_res["success"]:
-                    for f_entry in zip_res.get("files", []):
-                        parsed_datasets.append({
-                            "filename": f_entry["filename"],
-                            "data": f_entry["data"]
-                        })
-            elif fname.endswith((".xlsx", ".xls")):
-                res = parse_excel_bytes(content, fname)
-                if res["success"]:
-                    parsed_datasets.append({
-                        "filename": fname,
-                        "data": res["data"]
-                    })
-            else:
-                raw_text = content.decode("utf-8", errors="ignore")
-                res = parse_csv_data(raw_text)
-                if res["success"]:
-                    parsed_datasets.append({
-                        "filename": fname,
-                        "data": res["data"]
-                    })
-    elif raw_csv:
+        if fname.endswith(".zip"):
+            zip_res = parse_zip_file(content)
+            if zip_res["success"]:
+                for f_entry in zip_res.get("files", []):
+                    parsed_datasets.append({"filename": f_entry["filename"], "role": "MASTER ORDER SHEET", "data": f_entry["data"]})
+                    all_parsed_orders.extend(f_entry["data"])
+        elif fname.endswith((".xlsx", ".xls")):
+            res = parse_excel_bytes(content, fname)
+            if res["success"]:
+                parsed_datasets.append({"filename": fname, "role": "MASTER ORDER SHEET", "data": res["data"]})
+                all_parsed_orders.extend(res["data"])
+        else:
+            raw_text = content.decode("utf-8", errors="ignore")
+            res = parse_csv_data(raw_text)
+            if res["success"]:
+                parsed_datasets.append({"filename": fname, "role": "MASTER ORDER SHEET", "data": res["data"]})
+                all_parsed_orders.extend(res["data"])
+
+    # 2. PROCESS EXPLICIT PAYMENT FILES
+    for up_file in payment_upload_list:
+        fname = up_file.filename or "payment_file.csv"
+        content = await up_file.read()
+        files_info.append({"filename": fname, "size": len(content), "role": "PAYMENT SETTLEMENT SHEET"})
+
+        if fname.endswith(".zip"):
+            zip_res = parse_zip_file(content)
+            if zip_res["success"]:
+                for f_entry in zip_res.get("files", []):
+                    parsed_datasets.append({"filename": f_entry["filename"], "role": "PAYMENT SETTLEMENT SHEET", "data": f_entry["data"]})
+                    all_parsed_payments.extend(f_entry["data"])
+        elif fname.endswith((".xlsx", ".xls")):
+            res = parse_excel_bytes(content, fname)
+            if res["success"]:
+                parsed_datasets.append({"filename": fname, "role": "PAYMENT SETTLEMENT SHEET", "data": res["data"]})
+                all_parsed_payments.extend(res["data"])
+        else:
+            raw_text = content.decode("utf-8", errors="ignore")
+            res = parse_csv_data(raw_text)
+            if res["success"]:
+                parsed_datasets.append({"filename": fname, "role": "PAYMENT SETTLEMENT SHEET", "data": res["data"]})
+                all_parsed_payments.extend(res["data"])
+
+    # Fallback to pasted CSV
+    if not all_upload_files and raw_csv:
         res = parse_csv_data(raw_csv)
         if res["success"]:
-            parsed_datasets.append({
-                "filename": "pasted_clipboard_data.csv",
-                "data": res["data"]
-            })
-            files_info.append({"filename": "pasted_clipboard_data.csv", "size": len(raw_csv)})
-    else:
-        raise HTTPException(status_code=400, detail="Please upload spreadsheet files or paste CSV text.")
+            parsed_datasets.append({"filename": "pasted_clipboard_data.csv", "role": "MASTER ORDER SHEET", "data": res["data"]})
+            all_parsed_orders.extend(res["data"])
+            files_info.append({"filename": "pasted_clipboard_data.csv", "size": len(raw_csv), "role": "MASTER ORDER SHEET"})
+
+    if not all_parsed_orders and not all_parsed_payments:
+        raise HTTPException(status_code=400, detail="Please upload valid Order or Payment spreadsheet files.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # RUN NODE 1: INGEST & SHEET PROFILING (CONSOLE VERIFICATION)
@@ -125,9 +160,6 @@ async def create_and_process_batch(
         "raw_datasets": parsed_datasets
     }
     node1_result = ingest_node(node1_state)
-
-    # Classify Datasets into Master Order Sheet vs Payment Settlement Sheets
-    all_parsed_orders, all_parsed_payments = classify_and_separate_datasets(parsed_datasets)
 
     # Canonical Normalization & Database Persistence
     all_canonical_orders = []
@@ -147,14 +179,15 @@ async def create_and_process_batch(
     batch.total_records = total_records
     repo.update_batch_status(batch_id, "PROFILING_NODE_1_COMPLETE", processed_records=total_records)
 
-    # RECONCILIATION MATCHING
+    # 1. RECONCILIATION MATCHING
+    log_stage("RECONCILER", f"Matching {total_records} Master Orders against {len(all_parsed_payments)} Payment settlement rows...")
     reconciliation_res = process_reconciliation(all_parsed_orders, all_parsed_payments)
     repo.save_reconciliation_results(batch_id, reconciliation_res.get("matched", []))
     
     match_rate = reconciliation_res.get("matchRate", 0.0)
     matched_cnt = reconciliation_res.get("matchedCount", 0)
 
-    # GOVERNANCE EXCEPTIONS
+    # 2. GOVERNANCE EXCEPTIONS
     rules = [
         {
             "pattern": r.pattern,
@@ -204,8 +237,10 @@ async def create_and_process_batch(
         "batch_id": batch_id,
         "status": final_status,
         "node_1_status": "COMPLETED",
-        "sheet_profiles_count": len(node1_result.get("sheet_profiles", [])),
-        "total_records": total_records,
+        "order_files_count": len(order_upload_list),
+        "payment_files_count": len(payment_upload_list),
+        "total_orders": total_records,
+        "total_payments": len(all_parsed_payments),
         "match_rate": metrics["match_rate"],
         "total_profit": metrics["total_profit"],
         "unresolved_exceptions": len(exceptions),

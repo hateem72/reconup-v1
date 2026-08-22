@@ -26,6 +26,7 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
     """
     NODE 1: Discovers workbook sheets, profiles row/column dimensions, identifies
     candidate header rows (1-10), and computes column statistical profiles.
+    Log explicit file roles (ORDER vs PAYMENT) designated by user.
     """
     batch_id = state.get("batch_id", "batch_demo")
     files_info = state.get("files_info", [])
@@ -43,10 +44,11 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
 
     for idx, ds in enumerate(raw_datasets):
         fname = ds.get("filename", f"file_{idx+1}")
+        role = ds.get("role", "MASTER ORDER SHEET")
         rows = ds.get("data", [])
         
-        print(f"\n--- [NODE 1 PROFILING FILE #{idx+1}]: {fname} ---")
-        log_stage("NODE 1", f"File #{idx+1}: '{fname}' contains {len(rows)} raw rows")
+        print(f"\n--- [NODE 1 PROFILING FILE #{idx+1}]: {fname} [ROLE: {role}] ---")
+        log_stage("NODE 1", f"File #{idx+1}: '{fname}' [ROLE: {role}] contains {len(rows)} raw rows")
 
         if rows and isinstance(rows[0], dict):
             df_raw = pd.DataFrame(rows)
@@ -56,6 +58,7 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
 
             print(f"  • Sheet Index: {sheet_profile.sheet_index}")
             print(f"  • Sheet Name: {sheet_profile.sheet_name}")
+            print(f"  • Designated Role: {role}")
             print(f"  • Dimensions: {sheet_profile.row_count} rows x {sheet_profile.column_count} columns")
             print(f"  • Candidate Header Rows (1-based): {sheet_profile.candidate_header_rows}")
             print(f"  • Discovered Columns ({len(sheet_profile.column_profiles)}):")
@@ -71,7 +74,7 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
                 print(f"      - Column [{cp.column_index}] '{cp.column_name}': dtype={cp.dtype}, nulls={cp.null_percentage}%, uniqueness={round(cp.uniqueness_ratio*100, 1)}% [{type_str}] (Samples: {samples_preview})")
 
     print("\n" + "="*80)
-    print(f"  [NODE 1: COMPLETE] Discovered and profiled {total_sheets_found} sheets across {len(files_info)} uploaded files.")
+    print(f"  [NODE 1: COMPLETE] Profiled {total_sheets_found} sheets across {len(files_info)} uploaded files.")
     print("="*80 + "\n")
 
     log_stage("NODE 1", f"Node 1 complete. Profiled {total_sheets_found} sheets. Ready for Node 2 validation.")

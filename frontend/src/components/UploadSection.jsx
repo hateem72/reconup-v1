@@ -1,21 +1,38 @@
 import React, { useState } from 'react';
-import { Upload, FileSpreadsheet, Clipboard, Play, X, FileCheck } from 'lucide-react';
+import { Upload, FileSpreadsheet, Clipboard, Play, X, FileCheck, Layers, Package, CreditCard } from 'lucide-react';
 
 export default function UploadSection({ onUploadSuccess, isProcessing }) {
   const [activeTab, setActiveTab] = useState('file');
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [pasteData, setPasteData] = useState('');
-  const [dragOver, setDragOver] = useState(false);
+  const [dragOverOrder, setDragOverOrder] = useState(false);
+  const [dragOverPayment, setDragOverPayment] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleFileSelect = (newFiles) => {
+  const addFilesWithRole = (newFiles, defaultRole = 'ORDER') => {
     const fileArray = Array.from(newFiles);
     setSelectedFiles(prev => {
-      const existingNames = new Set(prev.map(f => f.name));
-      const filtered = fileArray.filter(f => !existingNames.has(f.name));
+      const existingNames = new Set(prev.map(f => f.file.name));
+      const filtered = fileArray
+        .filter(f => !existingNames.has(f.name))
+        .map(f => {
+          // Auto-detect payment role if filename contains payment keywords
+          const fnameLower = f.name.toLowerCase();
+          const autoRole = (fnameLower.includes('payment') || fnameLower.includes('settlement') || fnameLower.includes('payout')) ? 'PAYMENT' : defaultRole;
+          return { file: f, role: autoRole };
+        });
       return [...prev, ...filtered];
     });
+  };
+
+  const toggleFileRole = (index) => {
+    setSelectedFiles(prev => prev.map((item, i) => {
+      if (i === index) {
+        return { ...item, role: item.role === 'ORDER' ? 'PAYMENT' : 'ORDER' };
+      }
+      return item;
+    }));
   };
 
   const removeFile = (index) => {
@@ -28,9 +45,18 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
     setErrorMsg('');
     try {
       const formData = new FormData();
-      selectedFiles.forEach(file => {
-        formData.append('files', file);
+      const rolesMap = {};
+
+      selectedFiles.forEach(item => {
+        rolesMap[item.file.name] = item.role;
+        if (item.role === 'ORDER') {
+          formData.append('order_files', item.file);
+        } else {
+          formData.append('payment_files', item.file);
+        }
       });
+
+      formData.append('file_roles_json', JSON.stringify(rolesMap));
 
       const res = await fetch('/api/batches', {
         method: 'POST',
@@ -75,9 +101,9 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
         <div>
           <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-blue-600" />
-            Step 1: Ingest Order & Multi-Source Payment Settlement Files
+            Step 1: Ingest Master Order Sheets & Payment Settlement Files
           </h2>
-          <p className="text-xs text-slate-500">Upload your Order Sheet + multiple Payment Settlement files (Excel, CSV, ZIP) to run reconciliation</p>
+          <p className="text-xs text-slate-500">Designate Order Sheets vs Payment Settlement Sheets to profile and reconcile</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -85,7 +111,7 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
             className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${activeTab === 'file' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
           >
             <Upload className="w-3.5 h-3.5 inline mr-1" />
-            Multiple File Upload (.xlsx, .csv, .zip)
+            Upload Spreadsheets (.xlsx, .csv, .zip)
           </button>
           <button
             onClick={() => setActiveTab('paste')}
@@ -105,42 +131,75 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
 
       {activeTab === 'file' ? (
         <div className="space-y-4">
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                handleFileSelect(e.dataTransfer.files);
-              }
-            }}
-            className={`border-2 border-dashed rounded-2xl p-8 text-center transition cursor-pointer ${dragOver ? 'border-blue-600 bg-blue-50/50' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'}`}
-          >
-            <input
-              type="file"
-              id="file-upload-multi"
-              className="hidden"
-              multiple
-              accept=".xlsx,.xls,.csv,.zip"
-              onChange={(e) => e.target.files && handleFileSelect(e.target.files)}
-            />
-            <label htmlFor="file-upload-multi" className="cursor-pointer">
-              <Upload className="w-10 h-10 text-blue-600 mx-auto mb-2" />
-              <p className="text-sm font-extrabold text-slate-900">
-                Drag & drop Order Sheet + Payment Files or <span className="text-blue-600 underline">browse files</span>
-              </p>
-              <p className="text-xs text-slate-500 mt-1">Select multiple files at once (e.g. Orders July + June Payments + July Payments)</p>
-            </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Master Order Sheet Dropzone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOverOrder(true); }}
+              onDragLeave={() => setDragOverOrder(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverOrder(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  addFilesWithRole(e.dataTransfer.files, 'ORDER');
+                }
+              }}
+              className={`border-2 border-dashed rounded-2xl p-6 text-center transition cursor-pointer ${dragOverOrder ? 'border-blue-600 bg-blue-50/50' : 'border-blue-200 hover:border-blue-400 bg-blue-50/20'}`}
+            >
+              <input
+                type="file"
+                id="file-upload-order"
+                className="hidden"
+                multiple
+                accept=".xlsx,.xls,.csv,.zip"
+                onChange={(e) => e.target.files && addFilesWithRole(e.target.files, 'ORDER')}
+              />
+              <label htmlFor="file-upload-order" className="cursor-pointer">
+                <Package className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+                <p className="text-xs font-extrabold text-slate-900">
+                  Upload <span className="text-blue-600">Master Order Sheet(s)</span>
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1">Select Order CSV/XLSX file(s)</p>
+              </label>
+            </div>
+
+            {/* Payment Settlement Sheet Dropzone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOverPayment(true); }}
+              onDragLeave={() => setDragOverPayment(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverPayment(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  addFilesWithRole(e.dataTransfer.files, 'PAYMENT');
+                }
+              }}
+              className={`border-2 border-dashed rounded-2xl p-6 text-center transition cursor-pointer ${dragOverPayment ? 'border-emerald-600 bg-emerald-50/50' : 'border-emerald-200 hover:border-emerald-400 bg-emerald-50/20'}`}
+            >
+              <input
+                type="file"
+                id="file-upload-payment"
+                className="hidden"
+                multiple
+                accept=".xlsx,.xls,.csv,.zip"
+                onChange={(e) => e.target.files && addFilesWithRole(e.target.files, 'PAYMENT')}
+              />
+              <label htmlFor="file-upload-payment" className="cursor-pointer">
+                <CreditCard className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
+                <p className="text-xs font-extrabold text-slate-900">
+                  Upload <span className="text-emerald-600">Payment Settlement Sheet(s)</span>
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1">Select Payment CSV/XLSX/ZIP file(s)</p>
+              </label>
+            </div>
           </div>
 
-          {/* Selected Files Badge List */}
+          {/* Selected Files Badge List with Role Selector Toggle */}
           {selectedFiles.length > 0 && (
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                   <FileCheck className="w-4 h-4 text-emerald-600" />
-                  Selected Files ({selectedFiles.length}):
+                  Selected Upload Manifest ({selectedFiles.length} files):
                 </span>
                 <button
                   onClick={() => setSelectedFiles([])}
@@ -149,17 +208,37 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
                   Clear All
                 </button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {selectedFiles.map((file, idx) => (
-                  <div key={idx} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-xs font-mono font-bold text-slate-800 shadow-xs">
-                    <span className="truncate max-w-xs">{file.name}</span>
-                    <span className="text-[10px] text-slate-400 font-sans">({(file.size / 1024).toFixed(1)} KB)</span>
-                    <button onClick={() => removeFile(idx)} className="text-slate-400 hover:text-rose-600 ml-1">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+
+              <div className="space-y-2">
+                {selectedFiles.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 text-xs shadow-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono font-bold text-slate-900 truncate">{item.file.name}</span>
+                      <span className="text-[10px] text-slate-400 font-sans">({(item.file.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => toggleFileRole(idx)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition flex items-center gap-1 ${
+                          item.role === 'ORDER'
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}
+                        title="Click to toggle file role between Order Sheet and Payment Settlement Sheet"
+                      >
+                        {item.role === 'ORDER' ? <Package className="w-3 h-3 text-blue-600" /> : <CreditCard className="w-3 h-3 text-emerald-600" />}
+                        Role: {item.role === 'ORDER' ? 'Master Order Sheet' : 'Payment Settlement'}
+                      </button>
+
+                      <button onClick={() => removeFile(idx)} className="text-slate-400 hover:text-rose-600 p-1">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
+
               <div className="mt-4 flex justify-end">
                 <button
                   onClick={handleMultiFileUpload}
@@ -167,7 +246,7 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
                   className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md disabled:opacity-50 transition"
                 >
                   <Play className="w-3.5 h-3.5" />
-                  {loading ? 'Processing Files...' : `Process ${selectedFiles.length} Uploaded Files`}
+                  {loading ? 'Processing Node 1...' : `Run Node 1 & Process ${selectedFiles.length} Uploaded Files`}
                 </button>
               </div>
             </div>
