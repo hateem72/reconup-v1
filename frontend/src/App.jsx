@@ -98,7 +98,7 @@ ORD-1010\tCancelled\t200`;
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 selection:bg-cyan-500 selection:text-slate-950 font-sans">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-blue-600 selection:text-white">
       {/* Top Navbar */}
       <Navbar
         onRunDemo={runSyntheticDemo}
@@ -110,9 +110,9 @@ ORD-1010\tCancelled\t200`;
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
         {/* Reset Notification Banner */}
         {resetNotification && (
-          <div className="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center justify-between shadow-lg">
+          <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center justify-between shadow-xs">
             <span>{resetNotification}</span>
-            <button onClick={() => setResetNotification('')} className="text-rose-400 hover:underline">
+            <button onClick={() => setResetNotification('')} className="text-rose-600 hover:underline">
               Dismiss
             </button>
           </div>
@@ -171,7 +171,7 @@ ORD-1010\tCancelled\t200`;
         )}
       </main>
 
-      <footer className="border-t border-slate-900 py-6 text-center text-xs text-slate-500 bg-slate-950 font-mono">
+      <footer className="border-t border-slate-200 py-6 text-center text-xs text-slate-500 bg-white font-medium">
         FINANCE CONTROLLER AI • Hackathon System • Powered by FastAPI, LangGraph & Local LLM (qwen2.5:3b)
       </footer>
     </div>
