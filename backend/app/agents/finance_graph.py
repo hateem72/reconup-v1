@@ -1,8 +1,9 @@
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-from app.agents.state import FinanceState
+from app.agents.core.state import FinanceState
 from app.agents.nodes import (
     ingest_node,
+    sheet_filtering_node,
     validation_node,
     normalization_node,
     pattern_detection_node,
@@ -27,6 +28,7 @@ def build_finance_graph():
 
     # Add Nodes
     workflow.add_node("ingest", ingest_node)
+    workflow.add_node("filter_sheets", sheet_filtering_node)
     workflow.add_node("validate", validation_node)
     workflow.add_node("normalize", normalization_node)
     workflow.add_node("detect", pattern_detection_node)
@@ -38,7 +40,8 @@ def build_finance_graph():
 
     # Define Edges
     workflow.set_entry_point("ingest")
-    workflow.add_edge("ingest", "validate")
+    workflow.add_edge("ingest", "filter_sheets")
+    workflow.add_edge("filter_sheets", "validate")
     workflow.add_edge("validate", "normalize")
     workflow.add_edge("normalize", "detect")
     workflow.add_edge("detect", "reconcile")
@@ -49,7 +52,7 @@ def build_finance_graph():
         "exceptions",
         route_after_exception_analysis,
         {
-            "WAITING_HUMAN_REVIEW": "reprocess", # Can pause/resume here
+            "WAITING_HUMAN_REVIEW": "reprocess",
             "generate_report": "generate_report"
         }
     )
