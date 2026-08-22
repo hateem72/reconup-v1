@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Union
 from app.finance.normalizer import normalize_status, validate_and_clean_amount, clean_quantity
+from app.core.logging import log_stage
 
 def group_by_sku(data: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -159,6 +160,7 @@ def calculate_overall_profit(grouped_data: Dict[str, List[Dict[str, Any]]], cost
     if costs is None:
         costs = {}
 
+    log_stage("PROFIT", f"Calculating deterministic profit across {len(grouped_data)} SKUs")
     sku_breakdowns: Dict[str, Dict[str, Any]] = {}
     total_profit = 0.0
     total_delivered_sales = 0.0
@@ -201,7 +203,7 @@ def calculate_overall_profit(grouped_data: Dict[str, List[Dict[str, Any]]], cost
         total_rto_count
     )
 
-    return {
+    res = {
         "skuBreakdowns": sku_breakdowns,
         "overall": {
             "totalProfit": round(total_profit, 4),
@@ -223,6 +225,9 @@ def calculate_overall_profit(grouped_data: Dict[str, List[Dict[str, Any]]], cost
             "isProfitable": total_profit > 0
         }
     }
+
+    log_stage("PROFIT", f"Profit computation finished. Net Profit: ₹{round(total_profit, 2)} ({'Profitable' if total_profit > 0 else 'Unprofitable'})")
+    return res
 
 
 def get_unique_skus(data: List[Dict[str, Any]]) -> List[str]:

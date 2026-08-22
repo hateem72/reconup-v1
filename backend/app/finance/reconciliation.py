@@ -1,10 +1,13 @@
 from typing import List, Dict, Any, Tuple
+from app.schemas.canonical import CanonicalOrder, CanonicalPayment
+from app.core.logging import log_stage
 
 def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[Any]) -> Dict[str, Any]:
     """
     Reconciles order records against payment settlement records.
-    Supports dictionary list order rows and array payment rows (like excel sheet).
+    Supports dictionary list order rows and array payment rows.
     """
+    log_stage("RECONCILER", f"Starting reconciliation across {len(orders_raw)} raw orders and {len(payments_raw)} raw payments")
     # 1. Process Orders
     orders = []
     for row in orders_raw:
@@ -153,6 +156,8 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
     matched_count = len(matched)
     match_rate = (matched_count / total_orders * 100.0) if total_orders > 0 else 0.0
 
+    log_stage("RECONCILER", f"Reconciliation finished: {matched_count}/{total_orders} matched ({round(match_rate, 2)}% match rate)")
+
     return {
         "matched": matched,
         "missingInPayment": missing_in_payment,
@@ -166,3 +171,30 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
         "countReturns": count_returns,
         "countRTO": count_rto
     }
+
+
+def reconcile_canonical_records(canonical_orders: List[CanonicalOrder], canonical_payments: List[CanonicalPayment]) -> Dict[str, Any]:
+    """Bridges CanonicalOrder and CanonicalPayment lists directly into reconciliation engine."""
+    orders_raw = [
+        {
+            "Sub Order No": o.order_id,
+            "SKU": o.sku,
+            "Product Name": o.product_name,
+            "Quantity": o.quantity,
+            "Reason for Credit Entry": o.status,
+            "Order Date": o.order_date
+        }
+        for o in canonical_orders
+    ]
+    payments_raw = [
+        {
+            "orderId": p.order_id,
+            "amount": p.settlement_amount,
+            "status": p.status,
+            "qty": p.quantity,
+            "orderDate": p.payment_date,
+            "sku": p.sku
+        }
+        for p in canonical_payments
+    ]
+    return process_reconciliation(orders_raw, payments_raw)

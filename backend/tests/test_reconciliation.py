@@ -46,6 +46,6 @@ def test_detect_unknown_patterns():
     ]
     unknowns = detect_unknown_patterns(records)
     assert len(unknowns) == 1
-    assert unknowns[0]["pattern"] == "Return Assurance Fee"
+    assert unknowns[0]["raw_status"] == "Return Assurance Fee"
     assert unknowns[0]["occurrences"] == 2
-    assert unknowns[0]["total_impact"] == -40.0
+    assert unknowns[0]["amount"] == -40.0

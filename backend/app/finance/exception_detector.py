@@ -1,130 +1,120 @@
+import re
 from typing import List, Dict, Any
-from app.finance.normalizer import normalize_status, validate_and_clean_amount
+from app.finance.normalizer import UNKNOWN_POLICY_KEYWORDS
+from app.core.logging import log_stage
 
-KNOWN_STATUS_CATEGORIES = {
-    "Delivered", "Return", "RTO", "Claim",
-    "Affiliate Fees", "Exchange", "Shipping", "Cancelled"
+DEFAULT_KNOWN_CATEGORIES = {
+    "delivered", "return", "rto", "claim", "compensation", "affiliate fees",
+    "advertisement", "exchange", "shipping", "cancelled"
 }
 
-def detect_unknown_patterns(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def detect_unknown_patterns(records: List[Dict[str, Any]], active_rules: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
-    Groups and detects unknown status/deduction patterns across records.
-    Example: 'Return Assurance Fee' detected across 37 records -> grouped into 1 review item.
+    Scans sales or settlement records to identify unknown/unrecognized status patterns.
+    Groups multiple occurrences into single actionable review items with aggregated financial exposure.
     """
-    pattern_groups: Dict[str, Dict[str, Any]] = {}
+    if active_rules is None:
+        active_rules = []
 
-    for index, record in enumerate(records):
-        raw_status = str(record.get("status") or "").strip()
+    active_patterns = {r["pattern"].lower().strip(): r for r in active_rules if r.get("active", True)}
+    grouped_unknowns: Dict[str, Dict[str, Any]] = {}
+
+    for idx, row in enumerate(records):
+        raw_status = str(row.get("Reason for Credit Entry", row.get("status", row.get("rawStatus", ""))) or "").strip()
         if not raw_status:
             continue
 
-        normalized = normalize_status(raw_status)
-        
-        # If the normalized status matches known categories, skip unknown pattern detection
-        if normalized in KNOWN_STATUS_CATEGORIES:
+        raw_lower = raw_status.lower()
+
+        # Check if already matched by active rule
+        if raw_lower in active_patterns:
             continue
 
-        pattern_key = raw_status.lower()
-        _, amt, _ = validate_and_clean_amount(record.get("amount", 0))
-        order_id = str(record.get("orderId", record.get("skuId", f"REC-{index}")))
+        # Check if matches standard known categories
+        is_known = any(cat in raw_lower for cat in DEFAULT_KNOWN_CATEGORIES)
+        is_unknown_keyword = any(kw in raw_lower for kw in UNKNOWN_POLICY_KEYWORDS)
 
-        if pattern_key not in pattern_groups:
-            pattern_groups[pattern_key] = {
-                "pattern": raw_status,
-                "occurrences": 0,
-                "total_impact": 0.0,
-                "sample_orders": [],
-                "candidate_interpretation": f"Unrecognized category '{raw_status}'. AI review recommended.",
-                "confidence": 0.70,
-                "requires_human_review": True
-            }
+        if not is_known or is_unknown_keyword:
+            amt = float(row.get("amount", row.get("Payment Amount", 0)) or 0)
+            order_id = str(row.get("Sub Order No", row.get("orderId", f"row-{idx}")))
 
-        pattern_groups[pattern_key]["occurrences"] += 1
-        pattern_groups[pattern_key]["total_impact"] += amt
-        if len(pattern_groups[pattern_key]["sample_orders"]) < 5:
-            pattern_groups[pattern_key]["sample_orders"].append(order_id)
+            if raw_status not in grouped_unknowns:
+                grouped_unknowns[raw_status] = {
+                    "raw_status": raw_status,
+                    "count": 0,
+                    "total_amount": 0.0,
+                    "sample_orders": []
+                }
 
-    # Convert dictionary to list and round financial impact
-    result = []
-    for pg in pattern_groups.values():
-        pg["total_impact"] = round(pg["total_impact"], 4)
-        result.append(pg)
+            grouped_unknowns[raw_status]["count"] += 1
+            grouped_unknowns[raw_status]["total_amount"] += amt
+            if len(grouped_unknowns[raw_status]["sample_orders"]) < 5:
+                grouped_unknowns[raw_status]["sample_orders"].append(order_id)
 
-    return result
+    exceptions = []
+    for pattern, info in grouped_unknowns.items():
+        sample_str = ", ".join(info["sample_orders"])
+        exceptions.append({
+            "record_id": f"pattern-{pattern.lower().replace(' ', '-')}",
+            "order_id": sample_str,
+            "exception_type": "UNKNOWN_DEDUCTION",
+            "raw_status": pattern,
+            "amount": round(info["total_amount"], 4),
+            "description": f"Detected unknown pattern '{pattern}' affecting {info['count']} records (Total exposure: ₹{round(info['total_amount'], 2)}).",
+            "confidence": 0.85,
+            "status": "PENDING",
+            "requires_human": True,
+            "occurrences": info["count"]
+        })
+
+    return exceptions
 
 
 def evaluate_batch_exceptions(
-    records: List[Dict[str, Any]],
-    reconciliation_data: Dict[str, Any],
-    learned_rules: List[Dict[str, Any]] = None
+    orders: List[Dict[str, Any]],
+    reconciliation_results: Dict[str, Any],
+    active_rules: List[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Evaluates individual exceptions (missing payment, missing order, amount mismatch, unknown pattern).
-    Checks if learned rules match any unknown status.
+    Evaluates complete batch for all exception types:
+    1. Unknown deduction patterns
+    2. Missing payment settlement
+    3. Missing order ID in sales sheet
     """
-    if learned_rules is None:
-        learned_rules = []
+    log_stage("EXCEPTIONS", f"Evaluating batch exceptions across {len(orders)} orders and reconciliation results")
+    all_exceptions: List[Dict[str, Any]] = []
 
-    active_rule_patterns = {r.get("pattern", "").lower(): r for r in learned_rules if r.get("active", True)}
-    exceptions: List[Dict[str, Any]] = []
+    # 1. Unknown deduction patterns
+    unknown_patterns = detect_unknown_patterns(orders, active_rules)
+    all_exceptions.extend(unknown_patterns)
 
-    # 1. Reconciliation Missing Payments
-    for item in reconciliation_data.get("missingInPayment", []):
-        exceptions.append({
-            "record_id": item["orderId"],
+    # 2. Missing Payment exceptions
+    for item in reconciliation_results.get("missingInPayment", []):
+        all_exceptions.append({
+            "record_id": f"missing-pmt-{item['orderId']}",
             "order_id": item["orderId"],
             "exception_type": "MISSING_PAYMENT",
             "raw_status": item.get("orderSheetStatus", ""),
             "amount": 0.0,
-            "description": f"Order {item['orderId']} exists in order log but missing settlement payment record.",
+            "description": f"Order {item['orderId']} was dispatched ({item.get('orderSheetStatus')}) but no payment settlement record was found.",
             "confidence": 0.95,
             "status": "PENDING",
-            "requires_human": False
+            "requires_human": True
         })
 
-    # 2. Reconciliation Missing Orders
-    for item in reconciliation_data.get("missingInOrder", []):
-        exceptions.append({
-            "record_id": item["orderId"],
+    # 3. Missing Order exceptions
+    for item in reconciliation_results.get("missingInOrder", []):
+        all_exceptions.append({
+            "record_id": f"missing-ord-{item['orderId']}",
             "order_id": item["orderId"],
             "exception_type": "MISSING_ORDER",
             "raw_status": item.get("paymentStatuses", ""),
             "amount": item.get("totalPayment", 0.0),
-            "description": f"Payment recorded for order {item['orderId']} but missing in master order manifest.",
+            "description": f"Payment settled for Order {item['orderId']} (₹{item.get('totalPayment')}), but order ID was missing from order sheet.",
             "confidence": 0.90,
             "status": "PENDING",
-            "requires_human": False
+            "requires_human": True
         })
 
-    # 3. Unknown Statuses
-    unknown_patterns = detect_unknown_patterns(records)
-    for up in unknown_patterns:
-        pattern_lower = up["pattern"].lower()
-        if pattern_lower in active_rule_patterns:
-            rule = active_rule_patterns[pattern_lower]
-            # Resolved automatically by learned rule!
-            exceptions.append({
-                "record_id": f"pattern-{pattern_lower}",
-                "order_id": "N/A",
-                "exception_type": "RESOLVED_BY_RULE",
-                "raw_status": up["pattern"],
-                "amount": up["total_impact"],
-                "description": f"Pattern '{up['pattern']}' automatically resolved by learned rule: {rule['normalized_category']}",
-                "confidence": 1.0,
-                "status": "RESOLVED",
-                "requires_human": False
-            })
-        else:
-            exceptions.append({
-                "record_id": f"pattern-{pattern_lower}",
-                "order_id": "N/A",
-                "exception_type": "UNKNOWN_DEDUCTION",
-                "raw_status": up["pattern"],
-                "amount": up["total_impact"],
-                "description": f"Unknown financial status '{up['pattern']}' detected across {up['occurrences']} records with ₹{up['total_impact']} total impact.",
-                "confidence": up["confidence"],
-                "status": "PENDING",
-                "requires_human": True
-            })
-
-    return exceptions
+    log_stage("EXCEPTIONS", f"Batch exception evaluation finished. Total exceptions surfaced: {len(all_exceptions)}")
+    return all_exceptions
