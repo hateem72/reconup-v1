@@ -1,16 +1,15 @@
 import time
 from typing import Dict, Any, List
-from app.agents.state import FinanceState
+from app.agents.core.state import FinanceState
 from app.finance.normalizer import normalize_status, llm_normalize_statuses, clean_quantity, parse_numeric_amount
 from app.schemas.canonical import CanonicalOrder, CanonicalPayment
 from app.core.logging import log_stage
-from app.agents.column_mapping_agent import log_agent_call
+from app.agents.specialized.column_mapping_agent import log_agent_call
 
 def normalization_node(state: FinanceState) -> Dict[str, Any]:
     """
     NODE 3: StatusNormalizationAgent (Local LLM Ollama qwen2.5:3b) categorizes unique raw status
     strings into canonical categories (Delivered, Return, RTO, Cancelled, Shipped, Return_Initiated, Claim).
-    Normalizes raw rows into CanonicalOrder and CanonicalPayment models with 100% source traceability.
     """
     start_time = time.time()
     batch_id = state.get("batch_id", "batch_demo")

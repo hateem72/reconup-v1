@@ -1,7 +1,7 @@
 import time
 import pandas as pd
-from typing import Dict, Any, List
-from app.agents.state import FinanceState
+from typing import Dict, Any
+from app.agents.core.state import FinanceState
 from app.finance.order_normalizer import llm_map_columns, validate_order_mapping
 from app.core.logging import log_stage
 
@@ -17,7 +17,6 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
     """
     NODE 2: ColumnMappingAgent (Local LLM Ollama qwen2.5:3b) semantically maps raw column
     headers to canonical domain fields with distinct sub-tab schema caching.
-    Considers each sub-tab (Order Payments vs Ads Cost vs Disclaimer) as an independent entity!
     """
     start_time = time.time()
     batch_id = state.get("batch_id", "batch_demo")

@@ -1,6 +1,6 @@
 import pandas as pd
-from typing import Dict, Any, List
-from app.agents.state import FinanceState
+from typing import Dict, Any
+from app.agents.core.state import FinanceState
 from app.finance.profiler import profile_sheet
 from app.core.logging import log_stage
 
