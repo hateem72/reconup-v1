@@ -310,14 +310,17 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
                 )
                 canonical_payments.append(c_pmt)
 
-    historical_payments_count = sum(1 for p in canonical_payments if p.order_id not in master_order_ids)
+    # 4. Filter payment lines to strictly retain only those matching Master Order Sheet Order IDs
+    filtered_payments = [p for p in canonical_payments if p.order_id in master_order_ids]
+    discarded_count = len(canonical_payments) - len(filtered_payments)
 
     print("\n" + "="*80)
-    print(f"  [NODE 3 SUMMARY]:")
+    print(f"  [NODE 3 SUMMARY & PAYMENT SHEET FILTERING]:")
     print(f"  • Normalized Canonical Orders (Master Anchor): {len(canonical_orders)} records ({len(master_order_ids)} unique order IDs)")
-    print(f"  • Normalized Canonical Payments (Multi-Event): {len(canonical_payments)} settlement event lines")
-    print(f"  • Payment Rows Matching Master Anchor: {len(canonical_payments) - historical_payments_count} lines")
-    print(f"  • Historical Payment Lines (Previous Months): {historical_payments_count} lines")
+    print(f"  • Total Raw Payment Lines Ingested: {len(canonical_payments)} lines")
+    print(f"  • Retained Payment Lines (Matching Master Order Sheet): {len(filtered_payments)} lines")
+    print(f"  • Filtered Out Historical Payment Lines (Previous Months): {discarded_count} lines")
+    print(f"  • Data Reduction: {round((discarded_count / max(len(canonical_payments), 1)) * 100, 1)}% data reduction for faster Node 4 & Node 5 throughput!")
     print("="*80 + "\n")
 
     log_agent_call(
@@ -329,13 +332,13 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
         duration_sec=time.time() - start_time
     )
 
-    log_stage("NODE 3", f"Node 3 complete. Normalized {len(canonical_orders)} orders and {len(canonical_payments)} payments.")
+    log_stage("NODE 3", f"Node 3 complete. Normalized {len(canonical_orders)} orders and retained {len(filtered_payments)} matched payment lines (filtered out {discarded_count} historical lines).")
 
     return {
         "canonical_orders": canonical_orders,
-        "canonical_payments": canonical_payments,
+        "canonical_payments": filtered_payments,
         "master_order_ids_count": len(master_order_ids),
-        "historical_payments_count": historical_payments_count,
+        "historical_payments_count": discarded_count,
         "status_mappings": status_map,
         "status": "NODE_3_NORMALIZED"
     }
