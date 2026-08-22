@@ -29,9 +29,8 @@ export default function App() {
   const [pipelineStep, setPipelineStep] = useState(1);
   const [activeAuditTab, setActiveAuditTab] = useState('reconciliation');
 
-  useEffect(() => {
-    runSyntheticDemo();
-  }, []);
+  // Auto-run on page load disabled per user request
+  // Demo can be manually triggered by clicking "Run 100-Record Synthetic Demo"
 
   const fetchBatchData = async (batchId) => {
     try {
