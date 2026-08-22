@@ -2,13 +2,25 @@ import React, { useState } from 'react';
 import { Upload, FileSpreadsheet, FileText, CheckCircle2, ArrowRight, Shield, RefreshCw } from 'lucide-react';
 
 export default function UploadSection({ onUploadSuccess, isProcessing }) {
-  const [orderFile, setOrderFile] = useState(null);
-  const [paymentFile, setPaymentFile] = useState(null);
+  const [orderFiles, setOrderFiles] = useState([]);
+  const [paymentFiles, setPaymentFiles] = useState([]);
   const [uploadError, setUploadError] = useState('');
+
+  const handleOrderChange = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setOrderFiles(Array.from(e.target.files));
+    }
+  };
+
+  const handlePaymentChange = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setPaymentFiles(Array.from(e.target.files));
+    }
+  };
 
   const handleUploadSubmit = async (e) => {
     e.preventDefault();
-    if (!orderFile && !paymentFile) {
+    if (orderFiles.length === 0 && paymentFiles.length === 0) {
       setUploadError('Please select at least one Order Manifest file or Payment Settlement workbook.');
       return;
     }
@@ -16,12 +28,13 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
     setUploadError('');
     const formData = new FormData();
 
-    if (orderFile) {
-      formData.append('order_files', orderFile);
-    }
-    if (paymentFile) {
-      formData.append('payment_files', paymentFile);
-    }
+    orderFiles.forEach((file) => {
+      formData.append('order_files', file);
+    });
+
+    paymentFiles.forEach((file) => {
+      formData.append('payment_files', file);
+    });
 
     try {
       const res = await fetch('/api/batches', {
@@ -46,9 +59,9 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
           <Upload className="w-6 h-6" />
         </div>
         <div>
-          <h2 className="text-base font-extrabold text-slate-900">Step 1: Multi-Sheet Financial Dataset Ingestion</h2>
+          <h2 className="text-base font-extrabold text-slate-900">Step 1: Multi-File & Multi-Sheet Dataset Ingestion</h2>
           <p className="text-xs text-slate-500 font-medium">
-            Upload your Master Order Manifest and Payment Settlement Workbooks (.xlsx, .csv, .zip)
+            Upload your Master Order Manifest and multiple Payment Settlement Workbooks (.xlsx, .csv, .zip)
           </p>
         </div>
       </div>
@@ -80,57 +93,69 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
             <label className="block w-full cursor-pointer">
               <input
                 type="file"
+                multiple
                 accept=".xlsx,.xls,.csv,.zip"
-                onChange={(e) => setOrderFile(e.target.files[0])}
+                onChange={handleOrderChange}
                 className="hidden"
               />
               <div className="p-4 rounded-xl border border-dashed border-slate-300 hover:border-blue-500 bg-white text-center transition">
-                {orderFile ? (
-                  <div className="flex items-center justify-center gap-2 text-emerald-700 text-xs font-bold font-mono">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{orderFile.name}</span>
+                {orderFiles.length > 0 ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-center gap-2 text-emerald-700 text-xs font-bold font-mono">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{orderFiles.length} Order File(s) Selected</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono truncate">
+                      {orderFiles.map(f => f.name).join(', ')}
+                    </div>
                   </div>
                 ) : (
                   <span className="text-xs text-slate-500 font-medium">
-                    Click to select Master Order Sheet (.xlsx / .csv)
+                    Click to select Master Order Sheet(s) (.xlsx / .csv)
                   </span>
                 )}
               </div>
             </label>
           </div>
 
-          {/* Payment Settlement Workbook Uploader */}
+          {/* Payment Settlement Workbook Uploader (Multi-File enabled!) */}
           <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 hover:border-emerald-400 transition">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-emerald-600" />
-                Payment Settlement Workbook
+                Payment Settlement Workbooks
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
-                Multi-Subtab Settlement
+                Multi-File Upload
               </span>
             </div>
 
             <p className="text-[11px] text-slate-500 mb-4 font-medium">
-              Contains multi-event payout lines, settlement amounts, fees & adjustments.
+              Select multiple monthly payment files (e.g. July, June, May .xlsx files).
             </p>
 
             <label className="block w-full cursor-pointer">
               <input
                 type="file"
+                multiple
                 accept=".xlsx,.xls,.csv,.zip"
-                onChange={(e) => setPaymentFile(e.target.files[0])}
+                onChange={handlePaymentChange}
                 className="hidden"
               />
               <div className="p-4 rounded-xl border border-dashed border-slate-300 hover:border-emerald-500 bg-white text-center transition">
-                {paymentFile ? (
-                  <div className="flex items-center justify-center gap-2 text-emerald-700 text-xs font-bold font-mono">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{paymentFile.name}</span>
+                {paymentFiles.length > 0 ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-center gap-2 text-emerald-700 text-xs font-bold font-mono">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{paymentFiles.length} Payment File(s) Selected</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono truncate">
+                      {paymentFiles.map(f => f.name).join(', ')}
+                    </div>
                   </div>
                 ) : (
                   <span className="text-xs text-slate-500 font-medium">
-                    Click to select Payment Settlement Sheet (.xlsx / .csv)
+                    Click to select Payment Settlement File(s) (Hold Ctrl/Cmd to pick multiple)
                   </span>
                 )}
               </div>
@@ -141,7 +166,7 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
         <div className="flex items-center justify-between pt-4 border-t border-slate-200">
           <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
             <Shield className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Exact header profiling preserved without string mangling or silent row drops.</span>
+            <span>Multi-file & multi-sheet ingestion supported with automated schema caching.</span>
           </div>
 
           <button
