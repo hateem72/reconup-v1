@@ -12,6 +12,7 @@ from app.finance.reconciliation import process_reconciliation
 from app.finance.exception_detector import evaluate_batch_exceptions
 from app.finance.profit_calculator import group_by_sku, calculate_overall_profit
 from app.finance.metrics import calculate_batch_metrics
+from app.agents.nodes import ingest_node
 from app.core.logging import log_stage
 
 router = APIRouter()
@@ -32,7 +33,6 @@ def classify_and_separate_datasets(parsed_datasets: List[Dict[str, Any]]) -> Tup
 
         headers_lower = [str(k).lower() for k in rows[0].keys()]
         
-        # Check payment indicators
         is_payment_file = "payment" in fname or "settlement" in fname or "payout" in fname
         is_payment_header = any("final settlement amount" in h or "reason for credit entry" in h or "payment status" in h or "settlement" in h for h in headers_lower)
 
@@ -54,9 +54,9 @@ async def create_and_process_batch(
     db: Session = Depends(get_db)
 ):
     """
-    Creates a new batch supporting multiple file uploads (order sheets + settlement payment sheets),
+    Creates a new batch, executes NODE 1 (Ingest & Profiling) in the backend console for human verification,
     profiles spreadsheet columns, converts into CanonicalOrder and CanonicalPayment models,
-    executes multi-event reconciliation, profit calculations, and exception detection.
+    and executes multi-event reconciliation.
     """
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
@@ -70,23 +70,17 @@ async def create_and_process_batch(
         upload_list.append(file)
 
     filenames_summary = ", ".join([f.filename for f in upload_list]) if upload_list else "pasted_clipboard_data.csv"
-    
-    print("\n" + "="*80)
-    print(f"  [RECONCILIATION ENGINE] NEW BATCH STARTED: {batch_id}")
-    print(f"  [FILES] {filenames_summary}")
-    print("="*80 + "\n")
-
-    log_stage("BATCH", f"Initializing reconciliation batch '{batch_id}' with files: [{filenames_summary}]")
     batch = repo.create_batch(batch_id=batch_id, source_filename=filenames_summary, total_records=0)
-    repo.log_audit_event(batch_id, "STAGE_START", "INGEST", f"Files uploaded: {filenames_summary}")
+    repo.log_audit_event(batch_id, "STAGE_START", "NODE_1_INGEST", f"Files uploaded: {filenames_summary}")
 
     parsed_datasets: List[Dict[str, Any]] = []
+    files_info = []
 
     if upload_list:
         for up_file in upload_list:
             fname = up_file.filename or "file.csv"
             content = await up_file.read()
-            log_stage("PROFILER", f"Inspecting uploaded file: '{fname}'")
+            files_info.append({"filename": fname, "size": len(content)})
 
             if fname.endswith(".zip"):
                 zip_res = parse_zip_file(content)
@@ -118,13 +112,22 @@ async def create_and_process_batch(
                 "filename": "pasted_clipboard_data.csv",
                 "data": res["data"]
             })
+            files_info.append({"filename": "pasted_clipboard_data.csv", "size": len(raw_csv)})
     else:
         raise HTTPException(status_code=400, detail="Please upload spreadsheet files or paste CSV text.")
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # RUN NODE 1: INGEST & SHEET PROFILING (CONSOLE VERIFICATION)
+    # ─────────────────────────────────────────────────────────────────────────
+    node1_state = {
+        "batch_id": batch_id,
+        "files_info": files_info,
+        "raw_datasets": parsed_datasets
+    }
+    node1_result = ingest_node(node1_state)
+
     # Classify Datasets into Master Order Sheet vs Payment Settlement Sheets
     all_parsed_orders, all_parsed_payments = classify_and_separate_datasets(parsed_datasets)
-
-    log_stage("PROFILER", f"Final Separation: {len(all_parsed_orders)} Master Order rows | {len(all_parsed_payments)} Payment Settlement rows")
 
     # Canonical Normalization & Database Persistence
     all_canonical_orders = []
@@ -142,22 +145,16 @@ async def create_and_process_batch(
 
     total_records = len(all_parsed_orders)
     batch.total_records = total_records
-    repo.update_batch_status(batch_id, "RECONCILING", processed_records=total_records)
+    repo.update_batch_status(batch_id, "PROFILING_NODE_1_COMPLETE", processed_records=total_records)
 
-    # 1. RECONCILIATION MATCHING MASTER ORDERS ↔ PAYMENT SETTLEMENTS
-    log_stage("RECONCILER", f"Matching {total_records} Master Orders against {len(all_parsed_payments)} Payment settlement rows...")
+    # RECONCILIATION MATCHING
     reconciliation_res = process_reconciliation(all_parsed_orders, all_parsed_payments)
     repo.save_reconciliation_results(batch_id, reconciliation_res.get("matched", []))
     
     match_rate = reconciliation_res.get("matchRate", 0.0)
     matched_cnt = reconciliation_res.get("matchedCount", 0)
-    missing_pmt_cnt = len(reconciliation_res.get("missingInPayment", []))
-    missing_ord_cnt = len(reconciliation_res.get("missingInOrder", []))
 
-    log_stage("RECONCILER", f"RECONCILIATION RESULT: {matched_cnt}/{total_records} Matched ({match_rate}% Match Rate)")
-    log_stage("RECONCILER", f"DISCREPANCIES DETECTED: {missing_pmt_cnt} Missing Payments | {missing_ord_cnt} Historical Payment Rows")
-
-    # 2. SURFACE HIGH-LEVEL CONCISE GOVERNANCE EXCEPTIONS (NO 1,900 ROW CARD SPAM)
+    # GOVERNANCE EXCEPTIONS
     rules = [
         {
             "pattern": r.pattern,
@@ -169,7 +166,7 @@ async def create_and_process_batch(
     ]
     exceptions = evaluate_batch_exceptions(all_parsed_orders, reconciliation_res, rules)
 
-    # 3. GROUP MISSING SKU COST PRICES INTO 1 SUMMARY GOVERNANCE CARD (NEVER 1,900 CARDS!)
+    # SKU Cost Summary Exception Card
     sku_costs_map = repo.get_sku_costs_map()
     grouped = group_by_sku(all_parsed_orders)
     missing_cost_skus = [sku_id for sku_id in grouped.keys() if sku_costs_map.get(sku_id, 0.0) <= 0]
@@ -183,7 +180,7 @@ async def create_and_process_batch(
             "exception_type": "MISSING_COST_PRICE",
             "raw_status": "SKU Unit Cost Missing",
             "amount": 0.0,
-            "description": f"{cnt_skus} unique SKUs in this batch require cost price configuration for accurate P&L calculation.",
+            "description": f"{cnt_skus} unique SKUs in this batch require cost price configuration.",
             "confidence": 1.0,
             "status": "PENDING",
             "requires_human": True,
@@ -192,9 +189,7 @@ async def create_and_process_batch(
 
     repo.save_exceptions(batch_id, exceptions)
 
-    # Profit Calculation
     profit_res = calculate_overall_profit(grouped, sku_costs_map)
-
     end_time = time.time()
     processing_time_ms = (end_time - start_time) * 1000.0
 
@@ -205,15 +200,11 @@ async def create_and_process_batch(
     final_status = "WAITING_HUMAN_REVIEW" if pending_human else "RECONCILED"
     repo.update_batch_status(batch_id, final_status, processed_records=total_records, processing_time_ms=processing_time_ms)
 
-    print("\n" + "="*80)
-    print(f"  [RECONCILIATION SUMMARY] Batch {batch_id} Processing Complete!")
-    print(f"  [MATCH RATE] {match_rate}% | Matched: {matched_cnt} / {total_records}")
-    print(f"  [EXCEPTIONS SURFACED] {len(exceptions)} concise governance summary cards requiring review")
-    print("="*80 + "\n")
-
     return {
         "batch_id": batch_id,
         "status": final_status,
+        "node_1_status": "COMPLETED",
+        "sheet_profiles_count": len(node1_result.get("sheet_profiles", [])),
         "total_records": total_records,
         "match_rate": metrics["match_rate"],
         "total_profit": metrics["total_profit"],
