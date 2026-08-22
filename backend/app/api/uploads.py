@@ -1,13 +1,13 @@
 import uuid
 import time
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.database.repositories import FinanceRepository
 from app.finance.parser import parse_csv_data, parse_excel_bytes, parse_zip_file
-from app.finance.order_normalizer import auto_map_order_columns, validate_order_mapping, normalize_canonical_orders
-from app.finance.payment_normalizer import auto_map_payment_columns, validate_payment_mapping, normalize_canonical_payments
+from app.finance.order_normalizer import auto_map_order_columns, normalize_canonical_orders
+from app.finance.payment_normalizer import auto_map_payment_columns, normalize_canonical_payments
 from app.finance.profit_calculator import group_by_sku, calculate_overall_profit
 from app.finance.reconciliation import process_reconciliation
 from app.finance.exception_detector import evaluate_batch_exceptions
@@ -18,81 +18,120 @@ router = APIRouter()
 
 @router.post("/batches")
 async def create_and_process_batch(
+    files: Optional[List[UploadFile]] = File(None),
     file: Optional[UploadFile] = File(None),
     raw_csv: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
-    Creates a new batch, profiles spreadsheet columns, converts into CanonicalOrder and CanonicalPayment models,
+    Creates a new batch supporting multiple file uploads (order sheets + settlement payment sheets),
+    profiles spreadsheet columns, converts into CanonicalOrder and CanonicalPayment models,
     executes multi-event reconciliation, profit calculations, and exception detection.
     """
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
     repo = FinanceRepository(db)
 
-    filename = file.filename if file else "pasted_clipboard_data.csv"
-    log_stage("BATCH", f"Created batch '{batch_id}' for source file: {filename}")
-    batch = repo.create_batch(batch_id=batch_id, source_filename=filename, total_records=0)
-    repo.log_audit_event(batch_id, "STAGE_START", "INGEST", f"File uploaded: {filename}")
+    # Collect all uploaded files into a list
+    upload_list: List[UploadFile] = []
+    if files:
+        upload_list.extend(files)
+    if file and file not in upload_list:
+        upload_list.append(file)
 
-    parsed_orders = []
-    parsed_payments = []
+    filenames_summary = ", ".join([f.filename for f in upload_list]) if upload_list else "pasted_clipboard_data.csv"
+    log_stage("BATCH", f"Created batch '{batch_id}' with {len(upload_list)} uploaded files: [{filenames_summary}]")
+    batch = repo.create_batch(batch_id=batch_id, source_filename=filenames_summary, total_records=0)
+    repo.log_audit_event(batch_id, "STAGE_START", "INGEST", f"Files uploaded: {filenames_summary}")
 
-    if file:
-        content = await file.read()
-        if filename.endswith(".zip"):
-            res = parse_zip_file(content)
-        elif filename.endswith((".xlsx", ".xls")):
-            res = parse_excel_bytes(content)
-        else:
-            raw_text = content.decode("utf-8", errors="ignore")
-            res = parse_csv_data(raw_text)
+    all_parsed_orders = []
+    all_parsed_payments = []
+    all_canonical_orders = []
+    all_canonical_payments = []
 
-        if not res["success"]:
-            repo.update_batch_status(batch_id, "FAILED")
-            repo.log_audit_event(batch_id, "ERROR", "PARSING", "; ".join(res["errors"]))
-            raise HTTPException(status_code=400, detail="; ".join(res["errors"]))
-        parsed_orders = res["data"]
+    if upload_list:
+        for up_file in upload_list:
+            fname = up_file.filename or "file.csv"
+            content = await up_file.read()
+            log_stage("ORDER", f"Processing uploaded file: {fname}")
+
+            if fname.endswith(".zip"):
+                res = parse_zip_file(content)
+                if res["success"]:
+                    all_parsed_orders.extend(res["data"])
+            elif fname.endswith((".xlsx", ".xls")):
+                res = parse_excel_bytes(content)
+                if res["success"]:
+                    parsed_rows = res["data"]
+                    # Determine if file/sheet is Order vs Payment based on headers
+                    if parsed_rows and isinstance(parsed_rows[0], dict):
+                        headers_lower = [str(k).lower() for k in parsed_rows[0].keys()]
+                        is_payment = any("settlement" in h or "payment" in h or "credit entry" in h for h in headers_lower)
+                        if is_payment:
+                            all_parsed_payments.extend(parsed_rows)
+                            p_map = auto_map_payment_columns(list(parsed_rows[0].keys()))
+                            c_pmts = normalize_canonical_payments(__import__('pandas').DataFrame(parsed_rows), p_map, fname, "Sheet1", 2)
+                            all_canonical_payments.extend(c_pmts)
+                        else:
+                            all_parsed_orders.extend(parsed_rows)
+                            o_map = auto_map_order_columns(list(parsed_rows[0].keys()))
+                            c_ords = normalize_canonical_orders(__import__('pandas').DataFrame(parsed_rows), o_map, fname, "Sheet1", 2)
+                            all_canonical_orders.extend(c_ords)
+            else:
+                raw_text = content.decode("utf-8", errors="ignore")
+                res = parse_csv_data(raw_text)
+                if res["success"]:
+                    parsed_rows = res["data"]
+                    if parsed_rows and isinstance(parsed_rows[0], dict):
+                        headers_lower = [str(k).lower() for k in parsed_rows[0].keys()]
+                        is_payment = any("settlement" in h or "payment" in h or "credit" in h for h in headers_lower)
+                        if is_payment:
+                            all_parsed_payments.extend(parsed_rows)
+                            p_map = auto_map_payment_columns(list(parsed_rows[0].keys()))
+                            c_pmts = normalize_canonical_payments(__import__('pandas').DataFrame(parsed_rows), p_map, fname, "CSV", 2)
+                            all_canonical_payments.extend(c_pmts)
+                        else:
+                            all_parsed_orders.extend(parsed_rows)
+                            o_map = auto_map_order_columns(list(parsed_rows[0].keys()))
+                            c_ords = normalize_canonical_orders(__import__('pandas').DataFrame(parsed_rows), o_map, fname, "CSV", 2)
+                            all_canonical_orders.extend(c_ords)
+
     elif raw_csv:
         res = parse_csv_data(raw_csv)
         if not res["success"]:
             repo.update_batch_status(batch_id, "FAILED")
             repo.log_audit_event(batch_id, "ERROR", "PARSING", "; ".join(res["errors"]))
             raise HTTPException(status_code=400, detail="; ".join(res["errors"]))
-        parsed_orders = res["data"]
+        all_parsed_orders = res["data"]
+        if all_parsed_orders and isinstance(all_parsed_orders[0], dict):
+            o_map = auto_map_order_columns(list(all_parsed_orders[0].keys()))
+            all_canonical_orders = normalize_canonical_orders(__import__('pandas').DataFrame(all_parsed_orders), o_map, "pasted.csv", "Clipboard", 2)
     else:
-        raise HTTPException(status_code=400, detail="Please upload an Excel/CSV file or paste CSV text.")
+        raise HTTPException(status_code=400, detail="Please upload spreadsheet files or paste CSV text.")
 
-    total_records = len(parsed_orders)
+    total_records = len(all_parsed_orders)
     batch.total_records = total_records
     repo.update_batch_status(batch_id, "PROFILING", processed_records=total_records)
 
-    # 1. Canonical Normalization & Database Persistence
-    if parsed_orders and isinstance(parsed_orders[0], dict):
-        headers = list(parsed_orders[0].keys())
-        order_mapping = auto_map_order_columns(headers)
-        canonical_orders = normalize_canonical_orders(
-            df_data=__import__('pandas').DataFrame(parsed_orders),
-            mapping=order_mapping,
-            source_filename=filename,
-            source_sheet="Sheet1",
-            data_start_row=2
-        )
-        repo.save_canonical_orders(batch_id, canonical_orders)
+    # Persist Canonical Orders and Payments
+    if all_canonical_orders:
+        repo.save_canonical_orders(batch_id, all_canonical_orders)
+    if all_canonical_payments:
+        repo.save_canonical_payments(batch_id, all_canonical_payments)
 
     repo.update_batch_status(batch_id, "RECONCILING", processed_records=total_records)
 
-    # 2. Reconciliation
-    reconciliation_res = process_reconciliation(parsed_orders, parsed_payments)
+    # 1. Reconciliation matching all orders against all payment settlement files
+    reconciliation_res = process_reconciliation(all_parsed_orders, all_parsed_payments)
     repo.save_reconciliation_results(batch_id, reconciliation_res.get("matched", []))
     repo.log_audit_event(batch_id, "STAGE_COMPLETE", "RECONCILIATION", f"Match rate: {reconciliation_res.get('matchRate')}%")
 
-    # 3. Profit Calculation using DB SKU Cost Price Registry
+    # 2. Profit Calculation using DB SKU Cost Price Registry
     sku_costs_map = repo.get_sku_costs_map()
-    grouped = group_by_sku(parsed_orders)
+    grouped = group_by_sku(all_parsed_orders)
     profit_res = calculate_overall_profit(grouped, sku_costs_map)
 
-    # 4. Exceptions & Governance Rules
+    # 3. Exceptions & Governance Rules
     rules = [
         {
             "pattern": r.pattern,
@@ -102,7 +141,7 @@ async def create_and_process_batch(
         }
         for r in repo.get_all_rules(active_only=True)
     ]
-    exceptions = evaluate_batch_exceptions(parsed_orders, reconciliation_res, rules)
+    exceptions = evaluate_batch_exceptions(all_parsed_orders, reconciliation_res, rules)
 
     # Check missing SKU cost prices
     for sku_id in grouped.keys():
@@ -125,7 +164,7 @@ async def create_and_process_batch(
     end_time = time.time()
     processing_time_ms = (end_time - start_time) * 1000.0
 
-    # 5. Metrics & Report
+    # 4. Metrics & Report
     metrics = calculate_batch_metrics(batch_id, total_records, reconciliation_res, exceptions, profit_res, processing_time_ms)
     repo.save_report(batch_id, "PROFIT_AND_RECONCILIATION", metrics, profit_res.get("overall", {}), profit_res.get("skuBreakdowns", {}))
 
@@ -133,7 +172,7 @@ async def create_and_process_batch(
     final_status = "WAITING_HUMAN_REVIEW" if pending_human else "COMPLETED"
     repo.update_batch_status(batch_id, final_status, processed_records=total_records, processing_time_ms=processing_time_ms)
 
-    log_stage("BATCH", f"Completed batch '{batch_id}' processing in {round(processing_time_ms, 2)} ms. Final Status: {final_status}")
+    log_stage("BATCH", f"Completed multi-file batch '{batch_id}' in {round(processing_time_ms, 2)} ms. Status: {final_status}")
     repo.log_audit_event(batch_id, "STAGE_COMPLETE", "BATCH_PROCESSING", f"Status: {final_status}")
 
     return {
