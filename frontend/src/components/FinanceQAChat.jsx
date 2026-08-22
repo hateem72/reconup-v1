@@ -1,134 +1,111 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, Send, Bot, User, Sparkles, HelpCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { MessageSquare, Send, Bot, User, Sparkles } from 'lucide-react';
 
 export default function FinanceQAChat({ batchId }) {
-  const [question, setQuestion] = useState('');
+  const [query, setQuery] = useState('');
   const [messages, setMessages] = useState([
     {
-      sender: 'bot',
-      text: 'Hello! I am your AI Finance Controller Assistant. I query structured database facts to answer questions without financial hallucinations.'
+      sender: 'agent',
+      text: 'Hello! I am your AI Finance Operations Analyst. You can ask me questions about specific order payouts, match statuses, P&L SKU margins, or financial rules.'
     }
   ]);
-  const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSend = async (e) => {
-    if (e) e.preventDefault();
-    if (!question.trim()) return;
+    e.preventDefault();
+    if (!query.trim()) return;
 
-    const userText = question.trim();
+    const userText = query.trim();
     setMessages(prev => [...prev, { sender: 'user', text: userText }]);
-    setQuestion('');
-    setLoading(true);
+    setQuery('');
+    setIsLoading(true);
 
     try {
       const res = await fetch('/api/qa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: userText, batch_id: batchId })
+        body: JSON.stringify({
+          query: userText,
+          batch_id: batchId
+        })
       });
       const data = await res.json();
-      setMessages(prev => [...prev, { sender: 'bot', text: data.answer }]);
+      if (res.ok) {
+        setMessages(prev => [...prev, { sender: 'agent', text: data.response }]);
+      } else {
+        setMessages(prev => [...prev, { sender: 'agent', text: data.detail || "I ran the query tools but could not retrieve facts for this request." }]);
+      }
     } catch (err) {
-      setMessages(prev => [...prev, { sender: 'bot', text: 'Error retrieving database facts.' }]);
+      setMessages(prev => [...prev, { sender: 'agent', text: "Error connecting to AI QA tool backend." }]);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const sampleQuestions = [
-    "What is my match rate?",
-    "Which SKU is most profitable?",
-    "Why are records unresolved?"
-  ];
-
   return (
-    <div className="glass-panel p-6 mb-8 border border-purple-200 bg-white shadow-soft flex flex-col h-[520px]">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-200 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-700">
-            <Bot className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-sm font-extrabold text-slate-900">Step 5: Finance Q&A Assistant Console</h2>
-            <p className="text-[10px] text-slate-500">Deterministic Tool-backed Agent</p>
-          </div>
+    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-4">
+      <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
+        <div className="p-3 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+          <MessageSquare className="w-6 h-6" />
         </div>
-        <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 pulse-dot"></span>
-          Connected
-        </span>
+        <div>
+          <h2 className="text-base font-extrabold text-white">Step 6: AI Finance Controller Interactive Q&A</h2>
+          <p className="text-xs text-slate-400">
+            Ask any question regarding specific Order IDs, payout aggregations, or financial exceptions
+          </p>
+        </div>
       </div>
 
-      {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto my-4 space-y-3 pr-2">
+      <div className="h-80 overflow-y-auto space-y-3 p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs">
         {messages.map((m, idx) => (
-          <div key={idx} className={`flex gap-3 ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {m.sender === 'bot' && (
-              <div className="w-7 h-7 rounded-xl bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-700 shrink-0 shadow-xs">
+          <div
+            key={idx}
+            className={`flex items-start gap-2.5 ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            {m.sender === 'agent' && (
+              <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shrink-0">
                 <Bot className="w-4 h-4" />
               </div>
             )}
             <div
-              className={`p-3.5 rounded-2xl text-xs leading-relaxed max-w-[85%] ${
+              className={`p-3 rounded-xl max-w-lg leading-relaxed ${
                 m.sender === 'user'
-                  ? 'bg-blue-600 text-white rounded-br-none shadow-sm font-medium'
-                  : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-none shadow-xs font-sans font-medium'
+                  ? 'bg-blue-600 text-white font-medium'
+                  : 'bg-slate-900 border border-slate-800 text-slate-200 font-mono'
               }`}
             >
               {m.text}
             </div>
             {m.sender === 'user' && (
-              <div className="w-7 h-7 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-700 shrink-0 shadow-xs">
+              <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-300 shrink-0">
                 <User className="w-4 h-4" />
               </div>
             )}
           </div>
         ))}
-        {loading && (
-          <div className="flex items-center gap-2 text-xs text-purple-700 italic bg-purple-50 p-2.5 rounded-xl border border-purple-200 w-fit font-medium">
-            <Sparkles className="w-4 h-4 text-purple-600 animate-spin" />
-            Querying SQLite database records...
+        {isLoading && (
+          <div className="flex items-center gap-2 text-cyan-400 text-xs font-mono">
+            <Sparkles className="w-4 h-4 animate-spin" />
+            <span>AI Agent querying database tools...</span>
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick Question Chips */}
-      <div className="flex flex-wrap gap-1.5 mb-3 shrink-0">
-        {sampleQuestions.map((q, idx) => (
-          <button
-            key={idx}
-            onClick={() => { setQuestion(q); }}
-            className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 transition flex items-center gap-1"
-          >
-            <HelpCircle className="w-3 h-3 text-purple-600" />
-            {q}
-          </button>
-        ))}
-      </div>
-
-      {/* Form Input */}
-      <form onSubmit={handleSend} className="flex gap-2 shrink-0">
+      <form onSubmit={handleSend} className="flex gap-2">
         <input
           type="text"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ask a question about specific orders or settlement summaries..."
-          className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-xs text-slate-900 focus:outline-none focus:border-purple-600 font-sans"
+          placeholder="Ask a question (e.g., 'What is the payout for ORD-1001?')"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="flex-1 px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
         />
         <button
           type="submit"
-          disabled={loading || !question.trim()}
-          className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-sm disabled:opacity-50 transition"
+          disabled={isLoading || !query.trim()}
+          className="px-5 py-2.5 rounded-xl text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 flex items-center gap-1.5 transition disabled:opacity-50"
         >
-          <Send className="w-3.5 h-3.5" />
-          Ask
+          <Send className="w-4 h-4" />
+          <span>Ask Agent</span>
         </button>
       </form>
     </div>

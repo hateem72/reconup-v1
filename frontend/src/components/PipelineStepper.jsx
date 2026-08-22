@@ -1,98 +1,66 @@
 import React from 'react';
-import { Upload, FileSearch, ShieldAlert, FileText, MessageSquare, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Upload, Filter, Grid, CheckCircle2, AlertTriangle, DollarSign, MessageSquare } from 'lucide-react';
 
-export default function PipelineStepper({ currentStep, setStep, pendingExceptionsCount, missingCostCount }) {
+export default function PipelineStepper({ currentStep, setStep, pendingExceptionsCount }) {
   const steps = [
-    {
-      id: 1,
-      title: "1. Upload Data",
-      subtitle: "Order & Payment Files",
-      icon: Upload,
-      badge: null
-    },
-    {
-      id: 2,
-      title: "2. Profile & Mapping",
-      subtitle: "Column Validation",
-      icon: FileSearch,
-      badge: null
-    },
-    {
-      id: 3,
-      title: "3. Reconciliation Governance",
-      subtitle: "Reconcile & Exceptions",
-      icon: ShieldAlert,
-      badge: pendingExceptionsCount > 0 ? `${pendingExceptionsCount} Discrepancies` : null,
-      badgeColor: "bg-amber-100 text-amber-800 border-amber-300"
-    },
-    {
-      id: 4,
-      title: "4. P&L Analysis",
-      subtitle: "SKU Profit & Margins",
-      icon: FileText,
-      badge: missingCostCount > 0 ? `${missingCostCount} Cost Missing` : null,
-      badgeColor: "bg-amber-100 text-amber-800 border-amber-300"
-    },
-    {
-      id: 5,
-      title: "5. AI Q&A Console",
-      subtitle: "Fact-backed Q&A",
-      icon: MessageSquare,
-      badge: null
-    }
+    { id: 1, name: '1. Ingest Data', icon: Upload, desc: 'Upload Orders & Payments' },
+    { id: 2, name: '2. AI Sub-Tab Filter', icon: Filter, desc: 'SheetRelevanceAgent' },
+    { id: 3, name: '3. LLM Mapping Matrix', icon: Grid, desc: 'ColumnMappingAgent' },
+    { id: 4, name: '4. Order Reconciliation', icon: CheckCircle2, desc: 'ReconciliationEngine' },
+    { id: 5, name: '5. AI Exceptions & P&L', icon: DollarSign, desc: 'Human Governance' },
+    { id: 6, name: '6. AI Q&A Console', icon: MessageSquare, desc: 'Natural Language Agent' },
   ];
 
   return (
-    <div className="glass-panel p-3 mb-8 shadow-soft bg-white border border-slate-200">
-      <div className="flex flex-col md:flex-row items-stretch justify-between gap-2">
-        {steps.map((step, idx) => {
+    <div className="mb-8 rounded-2xl bg-slate-900 border border-slate-800 p-3 shadow-xl">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+        {steps.map((step) => {
           const Icon = step.icon;
           const isActive = currentStep === step.id;
           const isCompleted = currentStep > step.id;
 
           return (
-            <React.Fragment key={step.id}>
-              <button
-                onClick={() => setStep(step.id)}
-                className={`flex-1 flex items-center gap-3 p-3 rounded-xl transition text-left relative ${
-                  isActive
-                    ? 'bg-blue-50 border-2 border-blue-600 text-blue-900 shadow-sm'
-                    : isCompleted
-                    ? 'bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100'
-                    : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
-                }`}
-              >
+            <button
+              key={step.id}
+              onClick={() => setStep(step.id)}
+              className={`p-3 rounded-xl text-left transition-all duration-200 flex flex-col justify-between border relative overflow-hidden ${
+                isActive
+                  ? 'bg-gradient-to-tr from-blue-900/60 to-indigo-950/80 border-blue-500 text-white shadow-lg shadow-blue-500/10'
+                  : isCompleted
+                  ? 'bg-slate-950/60 border-slate-800/80 text-slate-300 hover:border-slate-700'
+                  : 'bg-slate-950/20 border-slate-900 text-slate-500 hover:text-slate-400'
+              }`}
+            >
+              {isActive && (
+                <div className="absolute top-0 right-0 left-0 h-0.5 bg-gradient-to-r from-cyan-400 to-blue-500 animate-pulse" />
+              )}
+              
+              <div className="flex items-center justify-between mb-1.5">
                 <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold ${
+                  className={`p-1.5 rounded-lg ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-md'
+                      ? 'bg-blue-500/20 text-cyan-400 border border-blue-500/30'
                       : isCompleted
-                      ? 'bg-emerald-500 text-white'
-                      : 'bg-slate-100 text-slate-600 border border-slate-200'
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : 'bg-slate-800/50 text-slate-600'
                   }`}
                 >
-                  {isCompleted ? <CheckCircle2 className="w-5 h-5" /> : <Icon className="w-4 h-4" />}
+                  <Icon className="w-4 h-4" />
                 </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-xs font-extrabold truncate ${isActive ? 'text-blue-900' : 'text-slate-800'}`}>
-                      {step.title}
-                    </span>
-                    {step.badge && (
-                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${step.badgeColor}`}>
-                        {step.badge}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-500 truncate mt-0.5">{step.subtitle}</p>
-                </div>
-
-                {idx < steps.length - 1 && (
-                  <ChevronRight className="w-4 h-4 text-slate-300 hidden md:block shrink-0" />
+                {step.id === 5 && pendingExceptionsCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    <AlertTriangle className="w-2.5 h-2.5" />
+                    {pendingExceptionsCount}
+                  </span>
                 )}
-              </button>
-            </React.Fragment>
+              </div>
+
+              <div>
+                <span className="text-xs font-bold block truncate">{step.name}</span>
+                <span className="text-[10px] text-slate-400 block truncate">{step.desc}</span>
+              </div>
+            </button>
           );
         })}
       </div>

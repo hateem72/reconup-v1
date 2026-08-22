@@ -1,278 +1,168 @@
 import React, { useState } from 'react';
-import { Upload, FileSpreadsheet, Clipboard, Play, X, FileCheck, Layers, Package, CreditCard } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileText, CheckCircle2, ArrowRight, Shield, RefreshCw } from 'lucide-react';
 
 export default function UploadSection({ onUploadSuccess, isProcessing }) {
-  const [activeTab, setActiveTab] = useState('file');
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [pasteData, setPasteData] = useState('');
-  const [dragOverOrder, setDragOverOrder] = useState(false);
-  const [dragOverPayment, setDragOverPayment] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [orderFile, setOrderFile] = useState(null);
+  const [paymentFile, setPaymentFile] = useState(null);
+  const [uploadError, setUploadError] = useState('');
 
-  const addFilesWithRole = (newFiles, defaultRole = 'ORDER') => {
-    const fileArray = Array.from(newFiles);
-    setSelectedFiles(prev => {
-      const existingNames = new Set(prev.map(f => f.file.name));
-      const filtered = fileArray
-        .filter(f => !existingNames.has(f.name))
-        .map(f => {
-          // Auto-detect payment role if filename contains payment keywords
-          const fnameLower = f.name.toLowerCase();
-          const autoRole = (fnameLower.includes('payment') || fnameLower.includes('settlement') || fnameLower.includes('payout')) ? 'PAYMENT' : defaultRole;
-          return { file: f, role: autoRole };
-        });
-      return [...prev, ...filtered];
-    });
-  };
-
-  const toggleFileRole = (index) => {
-    setSelectedFiles(prev => prev.map((item, i) => {
-      if (i === index) {
-        return { ...item, role: item.role === 'ORDER' ? 'PAYMENT' : 'ORDER' };
-      }
-      return item;
-    }));
-  };
-
-  const removeFile = (index) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleMultiFileUpload = async () => {
-    if (selectedFiles.length === 0) return;
-    setLoading(true);
-    setErrorMsg('');
-    try {
-      const formData = new FormData();
-      const rolesMap = {};
-
-      selectedFiles.forEach(item => {
-        rolesMap[item.file.name] = item.role;
-        if (item.role === 'ORDER') {
-          formData.append('order_files', item.file);
-        } else {
-          formData.append('payment_files', item.file);
-        }
-      });
-
-      formData.append('file_roles_json', JSON.stringify(rolesMap));
-
-      const res = await fetch('/api/batches', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Upload failed');
-      onUploadSuccess(data);
-      setSelectedFiles([]);
-    } catch (err) {
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
+  const handleUploadSubmit = async (e) => {
+    e.preventDefault();
+    if (!orderFile && !paymentFile) {
+      setUploadError('Please select at least one Order Manifest file or Payment Settlement workbook.');
+      return;
     }
-  };
 
-  const handlePasteSubmit = async () => {
-    if (!pasteData.trim()) return;
-    setLoading(true);
-    setErrorMsg('');
+    setUploadError('');
+    const formData = new FormData();
+
+    if (orderFile) {
+      formData.append('order_files', orderFile);
+    }
+    if (paymentFile) {
+      formData.append('payment_files', paymentFile);
+    }
+
     try {
-      const formData = new FormData();
-      formData.append('raw_csv', pasteData.trim());
-
       const res = await fetch('/api/batches', {
         method: 'POST',
         body: formData
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Paste processing failed');
-      onUploadSuccess(data);
+      if (res.ok) {
+        onUploadSuccess(data);
+      } else {
+        setUploadError(data.detail || 'Upload failed. Please check spreadsheet file formats.');
+      }
     } catch (err) {
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
+      setUploadError('Failed to connect to backend server at http://localhost:8000.');
     }
   };
 
   return (
-    <div className="glass-panel p-6 mb-8 border border-slate-200 bg-white shadow-soft">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 border-b border-slate-200 pb-3">
-        <div>
-          <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-blue-600" />
-            Step 1: Ingest Master Order Sheets & Payment Settlement Files
-          </h2>
-          <p className="text-xs text-slate-500">Designate Order Sheets vs Payment Settlement Sheets to profile and reconcile</p>
+    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
+      <div className="flex items-center gap-3 mb-6 border-b border-slate-800 pb-4">
+        <div className="p-3 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20">
+          <Upload className="w-6 h-6" />
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('file')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${activeTab === 'file' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-          >
-            <Upload className="w-3.5 h-3.5 inline mr-1" />
-            Upload Spreadsheets (.xlsx, .csv, .zip)
-          </button>
-          <button
-            onClick={() => setActiveTab('paste')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${activeTab === 'paste' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-          >
-            <Clipboard className="w-3.5 h-3.5 inline mr-1" />
-            Paste Clipboard CSV
-          </button>
+        <div>
+          <h2 className="text-base font-extrabold text-white">Step 1: Multi-Sheet Financial Dataset Ingestion</h2>
+          <p className="text-xs text-slate-400">
+            Upload your Master Order Manifest and Payment Settlement Workbooks (.xlsx, .csv, .zip)
+          </p>
         </div>
       </div>
 
-      {errorMsg && (
-        <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium">
-          {errorMsg}
+      {uploadError && (
+        <div className="mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold">
+          ⚠️ {uploadError}
         </div>
       )}
 
-      {activeTab === 'file' ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Master Order Sheet Dropzone */}
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragOverOrder(true); }}
-              onDragLeave={() => setDragOverOrder(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOverOrder(false);
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  addFilesWithRole(e.dataTransfer.files, 'ORDER');
-                }
-              }}
-              className={`border-2 border-dashed rounded-2xl p-6 text-center transition cursor-pointer ${dragOverOrder ? 'border-blue-600 bg-blue-50/50' : 'border-blue-200 hover:border-blue-400 bg-blue-50/20'}`}
-            >
+      <form onSubmit={handleUploadSubmit} className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Master Order Manifest Uploader */}
+          <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800/80 hover:border-blue-500/50 transition">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-blue-400" />
+                Master Order Sheet (Manifest)
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                Anchor Manifest
+              </span>
+            </div>
+            
+            <p className="text-[11px] text-slate-400 mb-4">
+              Contains Order IDs, SKUs, Order Dates, Quantities & Order Action Statuses.
+            </p>
+
+            <label className="block w-full cursor-pointer">
               <input
                 type="file"
-                id="file-upload-order"
-                className="hidden"
-                multiple
                 accept=".xlsx,.xls,.csv,.zip"
-                onChange={(e) => e.target.files && addFilesWithRole(e.target.files, 'ORDER')}
-              />
-              <label htmlFor="file-upload-order" className="cursor-pointer">
-                <Package className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-                <p className="text-xs font-extrabold text-slate-900">
-                  Upload <span className="text-blue-600">Master Order Sheet(s)</span>
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">Select Order CSV/XLSX file(s)</p>
-              </label>
-            </div>
-
-            {/* Payment Settlement Sheet Dropzone */}
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragOverPayment(true); }}
-              onDragLeave={() => setDragOverPayment(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOverPayment(false);
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  addFilesWithRole(e.dataTransfer.files, 'PAYMENT');
-                }
-              }}
-              className={`border-2 border-dashed rounded-2xl p-6 text-center transition cursor-pointer ${dragOverPayment ? 'border-emerald-600 bg-emerald-50/50' : 'border-emerald-200 hover:border-emerald-400 bg-emerald-50/20'}`}
-            >
-              <input
-                type="file"
-                id="file-upload-payment"
+                onChange={(e) => setOrderFile(e.target.files[0])}
                 className="hidden"
-                multiple
-                accept=".xlsx,.xls,.csv,.zip"
-                onChange={(e) => e.target.files && addFilesWithRole(e.target.files, 'PAYMENT')}
               />
-              <label htmlFor="file-upload-payment" className="cursor-pointer">
-                <CreditCard className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
-                <p className="text-xs font-extrabold text-slate-900">
-                  Upload <span className="text-emerald-600">Payment Settlement Sheet(s)</span>
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">Select Payment CSV/XLSX/ZIP file(s)</p>
-              </label>
-            </div>
-          </div>
-
-          {/* Selected Files Badge List with Role Selector Toggle */}
-          {selectedFiles.length > 0 && (
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <FileCheck className="w-4 h-4 text-emerald-600" />
-                  Selected Upload Manifest ({selectedFiles.length} files):
-                </span>
-                <button
-                  onClick={() => setSelectedFiles([])}
-                  className="text-[11px] text-rose-600 hover:underline font-bold"
-                >
-                  Clear All
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {selectedFiles.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 text-xs shadow-xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono font-bold text-slate-900 truncate">{item.file.name}</span>
-                      <span className="text-[10px] text-slate-400 font-sans">({(item.file.size / 1024).toFixed(1)} KB)</span>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => toggleFileRole(idx)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition flex items-center gap-1 ${
-                          item.role === 'ORDER'
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        }`}
-                        title="Click to toggle file role between Order Sheet and Payment Settlement Sheet"
-                      >
-                        {item.role === 'ORDER' ? <Package className="w-3 h-3 text-blue-600" /> : <CreditCard className="w-3 h-3 text-emerald-600" />}
-                        Role: {item.role === 'ORDER' ? 'Master Order Sheet' : 'Payment Settlement'}
-                      </button>
-
-                      <button onClick={() => removeFile(idx)} className="text-slate-400 hover:text-rose-600 p-1">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+              <div className="p-4 rounded-xl border border-dashed border-slate-700 hover:border-blue-400 bg-slate-900/50 text-center transition">
+                {orderFile ? (
+                  <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-bold font-mono">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{orderFile.name}</span>
                   </div>
-                ))}
+                ) : (
+                  <span className="text-xs text-slate-400 font-medium">
+                    Click to select Master Order Sheet (.xlsx / .csv)
+                  </span>
+                )}
               </div>
+            </label>
+          </div>
 
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={handleMultiFileUpload}
-                  disabled={loading || selectedFiles.length === 0}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md disabled:opacity-50 transition"
-                >
-                  <Play className="w-3.5 h-3.5" />
-                  {loading ? 'Processing Node 1...' : `Run Node 1 & Process ${selectedFiles.length} Uploaded Files`}
-                </button>
-              </div>
+          {/* Payment Settlement Workbook Uploader */}
+          <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800/80 hover:border-emerald-500/50 transition">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-400" />
+                Payment Settlement Workbook
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Multi-Subtab Settlement
+              </span>
             </div>
-          )}
-        </div>
-      ) : (
-        <div>
-          <textarea
-            rows={5}
-            value={pasteData}
-            onChange={(e) => setPasteData(e.target.value)}
-            placeholder="Paste tab-delimited Excel cells or CSV rows (e.g. SKU ID, Status, Amount)..."
-            className="w-full p-3.5 rounded-xl bg-slate-50 border border-slate-300 text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-mono"
-          />
-          <div className="mt-3 flex justify-end">
-            <button
-              onClick={handlePasteSubmit}
-              disabled={loading || !pasteData.trim()}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 disabled:opacity-50 shadow-md transition"
-            >
-              <Play className="w-3.5 h-3.5" />
-              Process Pasted Data
-            </button>
+
+            <p className="text-[11px] text-slate-400 mb-4">
+              Contains multi-event payout lines, settlement amounts, fees & adjustments.
+            </p>
+
+            <label className="block w-full cursor-pointer">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.zip"
+                onChange={(e) => setPaymentFile(e.target.files[0])}
+                className="hidden"
+              />
+              <div className="p-4 rounded-xl border border-dashed border-slate-700 hover:border-emerald-400 bg-slate-900/50 text-center transition">
+                {paymentFile ? (
+                  <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-bold font-mono">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{paymentFile.name}</span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-400 font-medium">
+                    Click to select Payment Settlement Sheet (.xlsx / .csv)
+                  </span>
+                )}
+              </div>
+            </label>
           </div>
         </div>
-      )}
+
+        <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>Exact header profiling preserved without string mangling or silent row drops.</span>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isProcessing}
+            className="px-6 py-3 rounded-xl text-xs font-extrabold bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20 flex items-center gap-2 transition disabled:opacity-50"
+          >
+            {isProcessing ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Processing Pipeline...</span>
+              </>
+            ) : (
+              <>
+                <span>Ingest & Execute AI Agents</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
