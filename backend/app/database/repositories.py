@@ -104,6 +104,46 @@ class FinanceRepository:
         self.db.commit()
         return entities
 
+    def get_canonical_orders(self, batch_id: str) -> List[CanonicalOrder]:
+        models = self.db.query(OrderModel).filter(OrderModel.batch_id == batch_id).all()
+        orders = []
+        for m in models:
+            c = CanonicalOrder(
+                order_id=m.order_id,
+                sku=m.sku or "",
+                product_name=m.product_name or "",
+                quantity=m.quantity or 1,
+                status=m.status or "",
+                dispatch_date=m.dispatch_date or "",
+                order_date=m.order_date or "",
+                source_file=m.source_file or "",
+                source_sheet=m.source_sheet or "",
+                source_row=m.source_row or 0,
+                raw_data=m.raw_data or {}
+            )
+            orders.append(c)
+        return orders
+
+    def get_canonical_payments(self, batch_id: str) -> List[CanonicalPayment]:
+        models = self.db.query(PaymentModel).filter(PaymentModel.batch_id == batch_id).all()
+        payments = []
+        for m in models:
+            c = CanonicalPayment(
+                transaction_id=m.transaction_id or f"pmt-{m.id}",
+                order_id=m.order_id or "",
+                settlement_amount=m.settlement_amount or 0.0,
+                status=m.status or "",
+                quantity=m.quantity or 1,
+                sku=m.sku or "",
+                payment_date=m.payment_date or "",
+                source_file=m.source_file or "",
+                source_sheet=m.source_sheet or "",
+                source_row=m.source_row or 0,
+                raw_data=m.raw_data or {}
+            )
+            payments.append(c)
+        return payments
+
     # ── Reconciliation Results ─────────────────────────────────────
     def save_reconciliation_results(self, batch_id: str, results: List[Dict[str, Any]]) -> List[ReconciliationResultModel]:
         entities = []
