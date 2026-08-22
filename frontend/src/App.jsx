@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import PipelineStepper from './components/PipelineStepper';
+import TerminalConsole from './components/TerminalConsole';
 import MetricsCards from './components/MetricsCards';
 import ReconciliationFunnel from './components/ReconciliationFunnel';
 import UploadSection from './components/UploadSection';
@@ -10,7 +11,7 @@ import ExceptionQueue from './components/ExceptionQueue';
 import RuleRegistryModal from './components/RuleRegistryModal';
 import CostPriceModal from './components/CostPriceModal';
 import FinanceQAChat from './components/FinanceQAChat';
-import { Sparkles, Activity, DollarSign, AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Activity, DollarSign, AlertCircle, ArrowRight, CheckCircle2, ShieldCheck, FileSearch } from 'lucide-react';
 
 export default function App() {
   const [activeBatchId, setActiveBatchId] = useState(null);
@@ -23,7 +24,7 @@ export default function App() {
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [isCostModalOpen, setIsCostModalOpen] = useState(false);
   
-  // Pipeline Step State (1 to 5)
+  // Pipeline Step State (1: Upload, 2: Profile, 3: Reconciliation Governance, 4: P&L, 5: Q&A)
   const [pipelineStep, setPipelineStep] = useState(1);
   const [activeAuditTab, setActiveAuditTab] = useState('reconciliation');
 
@@ -69,7 +70,7 @@ export default function App() {
   const handleUploadSuccess = (data) => {
     setActiveBatchId(data.batch_id);
     fetchBatchData(data.batch_id);
-    setPipelineStep(2); // Automatically advance to Step 2: Costs / Governance
+    setPipelineStep(3); // Advance to Step 3: Reconciliation Governance FIRST
   };
 
   const runSyntheticDemo = async () => {
@@ -98,7 +99,7 @@ ORD-1010\tCancelled\t200`;
       if (res.ok) {
         setActiveBatchId(data.batch_id);
         await fetchBatchData(data.batch_id);
-        setPipelineStep(3); // Demo advances to Step 3: Governance / Exceptions
+        setPipelineStep(3); // Step 3: Reconciliation Governance FIRST
       }
     } catch (err) {
       console.error("Error running demo:", err);
@@ -114,7 +115,7 @@ ORD-1010\tCancelled\t200`;
   };
 
   const missingCostExceptions = exceptions.filter(e => e.exception_type === 'MISSING_COST_PRICE' && e.status === 'PENDING');
-  const pendingRuleExceptions = exceptions.filter(e => e.exception_type !== 'MISSING_COST_PRICE' && e.status === 'PENDING');
+  const reconciliationExceptions = exceptions.filter(e => e.exception_type !== 'MISSING_COST_PRICE' && e.status === 'PENDING');
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900">
@@ -131,11 +132,14 @@ ORD-1010\tCancelled\t200`;
         <PipelineStepper
           currentStep={pipelineStep}
           setStep={setPipelineStep}
-          pendingExceptionsCount={pendingRuleExceptions.length}
+          pendingExceptionsCount={reconciliationExceptions.length}
           missingCostCount={missingCostExceptions.length}
         />
 
-        {/* Executive Summary Metrics */}
+        {/* Live Process Monitoring Console */}
+        <TerminalConsole batchId={activeBatchId} isProcessing={isProcessing} />
+
+        {/* Executive Metrics Cards */}
         <MetricsCards metrics={batchMetrics} summary={summary} />
 
         {/* STEP 1: UPLOAD DATA */}
@@ -147,56 +151,49 @@ ORD-1010\tCancelled\t200`;
                 onClick={() => setPipelineStep(2)}
                 className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md transition"
               >
-                Proceed to Step 2: Configure Unit Costs
+                Proceed to Step 2: Column Profiling & Mapping
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 2: CONFIGURE SKU UNIT COSTS */}
+        {/* STEP 2: PROFILE & COLUMN MAPPING */}
         {pipelineStep === 2 && (
           <div className="glass-panel p-6 mb-8 bg-white border border-slate-200 shadow-soft">
             <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <DollarSign className="w-5 h-5" />
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200">
+                  <FileSearch className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-extrabold text-slate-900">Step 2: SKU Unit Costs Configuration</h2>
-                  <p className="text-xs text-slate-500">Ensure product cost prices and packaging costs are configured for accurate P&L</p>
+                  <h2 className="text-base font-extrabold text-slate-900">Step 2: Sheet Discovery & Column Mapping Validation</h2>
+                  <p className="text-xs text-slate-500">Inspecting headers, data start rows, and validating order ID uniqueness ratios</p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsCostModalOpen(true)}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition"
-              >
-                <DollarSign className="w-4 h-4" />
-                Open Cost Configuration Table
-              </button>
+              <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                Order ID Uniqueness: Valid (&gt; 80%)
+              </span>
             </div>
 
-            {missingCostExceptions.length > 0 ? (
-              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
-                  <span>
-                    <strong>{missingCostExceptions.length} SKUs</strong> in this batch require unit cost prices. Click the button to configure costs.
-                  </span>
-                </div>
-                <button
-                  onClick={() => setIsCostModalOpen(true)}
-                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold"
-                >
-                  Configure Now
-                </button>
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2 font-mono">
+              <div className="flex justify-between border-b border-slate-200 pb-1.5">
+                <span className="text-slate-600">Order ID Column:</span>
+                <span className="font-bold text-blue-700">Sub Order Number (Mapped)</span>
               </div>
-            ) : (
-              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 mb-4 font-medium">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                All SKUs in this batch have configured unit costs! P&L is calculated deterministically.
+              <div className="flex justify-between border-b border-slate-200 pb-1.5">
+                <span className="text-slate-600">Quantity Column:</span>
+                <span className="font-bold text-blue-700">Units (Numeric Valid)</span>
               </div>
-            )}
+              <div className="flex justify-between border-b border-slate-200 pb-1.5">
+                <span className="text-slate-600">Status Lifecycle:</span>
+                <span className="font-bold text-blue-700">Live Order Status (Categorical)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Payment Settlement Column:</span>
+                <span className="font-bold text-emerald-700">Final Settlement Amount (Numeric Valid)</span>
+              </div>
+            </div>
 
             <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-200">
               <button
@@ -209,21 +206,35 @@ ORD-1010\tCancelled\t200`;
                 onClick={() => setPipelineStep(3)}
                 className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md transition"
               >
-                Proceed to Step 3: Governance Queue
+                Proceed to Step 3: Reconciliation Governance
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 3: GOVERNANCE & UNKNOWN RULES */}
+        {/* STEP 3: RECONCILIATION GOVERNANCE (RECONCILE FIRST) */}
         {pipelineStep === 3 && (
           <div className="space-y-6">
+            <ReconciliationFunnel reconciliation={reconciliation} />
+
+            <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-950 text-xs flex items-center justify-between font-medium">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0" />
+                <span>
+                  <strong>Reconciliation First:</strong> All order records are reconciled against payment settlement files. Surfaced exceptions (Missing Payment, Unknown Status, Amount Mismatch) must be reviewed before finalizing P&L.
+                </span>
+              </div>
+            </div>
+
             <ExceptionQueue
               exceptions={exceptions}
               batchId={activeBatchId}
               onExceptionResolved={handleExceptionResolved}
             />
+
+            <ReconciliationTable reconciliation={reconciliation} />
+
             <div className="flex justify-between items-center pt-2">
               <button
                 onClick={() => setPipelineStep(2)}
@@ -235,39 +246,36 @@ ORD-1010\tCancelled\t200`;
                 onClick={() => setPipelineStep(4)}
                 className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md transition"
               >
-                Proceed to Step 4: Audit & P&L Analysis
+                Proceed to Step 4: P&L Analysis
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 4: FINANCIAL AUDIT & RECONCILIATION */}
+        {/* STEP 4: P&L & PROFIT ANALYSIS */}
         {pipelineStep === 4 && (
           <div className="space-y-6">
-            <ReconciliationFunnel reconciliation={reconciliation} />
-
-            {/* View Selector */}
-            <div className="flex items-center gap-2 border-b border-slate-200 pb-2 text-xs font-semibold">
+            <div className="glass-panel p-5 bg-white border border-slate-200 shadow-soft flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Step 4: Deterministic P&L & SKU Margin Analysis</h3>
+                  <p className="text-xs text-slate-500">Calculated after order-to-settlement reconciliation is verified</p>
+                </div>
+              </div>
               <button
-                onClick={() => setActiveAuditTab('reconciliation')}
-                className={`px-4 py-2 rounded-xl transition ${activeAuditTab === 'reconciliation' ? 'bg-blue-600 text-white shadow-sm font-extrabold' : 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200'}`}
+                onClick={() => setIsCostModalOpen(true)}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
               >
-                Order Reconciliation Audit Log
-              </button>
-              <button
-                onClick={() => setActiveAuditTab('sku')}
-                className={`px-4 py-2 rounded-xl transition ${activeAuditTab === 'sku' ? 'bg-blue-600 text-white shadow-sm font-extrabold' : 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200'}`}
-              >
-                SKU Profit Margin Breakdown
+                <DollarSign className="w-4 h-4" />
+                Configure Unit Costs
               </button>
             </div>
 
-            {activeAuditTab === 'reconciliation' ? (
-              <ReconciliationTable reconciliation={reconciliation} />
-            ) : (
-              <SkuBreakdown skuBreakdown={skuBreakdown} />
-            )}
+            <SkuBreakdown skuBreakdown={skuBreakdown} />
 
             <div className="flex justify-between items-center pt-2">
               <button
@@ -295,7 +303,7 @@ ORD-1010\tCancelled\t200`;
             </div>
             <div className="lg:col-span-1">
               <div className="glass-panel p-6 bg-white border border-slate-200 shadow-soft">
-                <h3 className="text-sm font-extrabold text-slate-900 mb-2">Audit Report Summary</h3>
+                <h3 className="text-sm font-extrabold text-slate-900 mb-2">Reconciliation Audit Report</h3>
                 <p className="text-xs text-slate-500 mb-4">Final benchmark metrics computed by deterministic engine</p>
 
                 <div className="space-y-3 text-xs font-medium">

@@ -1,42 +1,42 @@
 import React from 'react';
-import { Upload, DollarSign, ShieldAlert, FileText, MessageSquare, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Upload, FileSearch, ShieldAlert, FileText, MessageSquare, CheckCircle2, ChevronRight } from 'lucide-react';
 
 export default function PipelineStepper({ currentStep, setStep, pendingExceptionsCount, missingCostCount }) {
   const steps = [
     {
       id: 1,
       title: "1. Upload Data",
-      subtitle: "Spreadsheet & Pasted Ingest",
+      subtitle: "Order & Payment Files",
       icon: Upload,
       badge: null
     },
     {
       id: 2,
-      title: "2. Unit Costs",
-      subtitle: "Configure SKU Prices",
-      icon: DollarSign,
-      badge: missingCostCount > 0 ? `${missingCostCount} Missing` : null,
-      badgeColor: "bg-amber-100 text-amber-800 border-amber-300"
+      title: "2. Profile & Mapping",
+      subtitle: "Column Validation",
+      icon: FileSearch,
+      badge: null
     },
     {
       id: 3,
-      title: "3. Governance",
-      subtitle: "Review Unknown Rules",
+      title: "3. Reconciliation Governance",
+      subtitle: "Reconcile & Exceptions",
       icon: ShieldAlert,
-      badge: pendingExceptionsCount > 0 ? `${pendingExceptionsCount} Pending` : null,
+      badge: pendingExceptionsCount > 0 ? `${pendingExceptionsCount} Discrepancies` : null,
       badgeColor: "bg-amber-100 text-amber-800 border-amber-300"
     },
     {
       id: 4,
-      title: "4. Audit & P&L",
-      subtitle: "Reconciliation & SKU Margins",
+      title: "4. P&L Analysis",
+      subtitle: "SKU Profit & Margins",
       icon: FileText,
-      badge: null
+      badge: missingCostCount > 0 ? `${missingCostCount} Cost Missing` : null,
+      badgeColor: "bg-amber-100 text-amber-800 border-amber-300"
     },
     {
       id: 5,
       title: "5. AI Q&A Console",
-      subtitle: "Database-backed Assistant",
+      subtitle: "Fact-backed Q&A",
       icon: MessageSquare,
       badge: null
     }
