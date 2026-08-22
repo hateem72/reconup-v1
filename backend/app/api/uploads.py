@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.database.repositories import FinanceRepository
 from app.finance.parser import parse_csv_data, parse_excel_bytes, parse_zip_file
-from app.agents.nodes import ingest_node, validation_node
+from app.agents.nodes import ingest_node, validation_node, normalization_node
 from app.core.logging import log_stage
 
 router = APIRouter()
@@ -23,8 +23,9 @@ async def create_and_process_batch(
     db: Session = Depends(get_db)
 ):
     """
-    Creates a new batch and EXECUTES NODE 1 (Ingest & Header Profiling) followed by
-    NODE 2 (LLM Column Mapping & Validation Agent). Stops after Node 2 for human verification.
+    Creates a new batch and EXECUTES NODE 1 (Ingest & Header Profiling),
+    NODE 2 (LLM Column Mapping & Validation), and NODE 3 (LLM Status Classification & Canonical Model Normalization).
+    Stops after Node 3 for step-by-step human verification.
     """
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
@@ -69,7 +70,7 @@ async def create_and_process_batch(
     filenames_summary = ", ".join([f.filename for f in all_upload_files]) if all_upload_files else "pasted_clipboard_data.csv"
     
     print("\n" + "="*80)
-    print(f"  [NODE 1 ──▶ NODE 2 CHAIN EXECUTION] NEW BATCH CREATED: {batch_id}")
+    print(f"  [NODE 1 ──▶ NODE 2 ──▶ NODE 3 CHAIN EXECUTION] BATCH CREATED: {batch_id}")
     print(f"  [ORDER FILES ({len(order_upload_list)})]: {[f.filename for f in order_upload_list]}")
     print(f"  [PAYMENT FILES ({len(payment_upload_list)})]: {[f.filename for f in payment_upload_list]}")
     print("="*80 + "\n")
@@ -81,7 +82,7 @@ async def create_and_process_batch(
     parsed_datasets = []
     files_info = []
 
-    # 1. PROCESS EXPLICIT ORDER FILES FOR NODE 1 & 2
+    # 1. PROCESS EXPLICIT ORDER FILES
     for up_file in order_upload_list:
         fname = up_file.filename or "order_file.csv"
         content = await up_file.read()
@@ -109,7 +110,7 @@ async def create_and_process_batch(
             if res["success"]:
                 parsed_datasets.append({"filename": fname, "role": "MASTER ORDER SHEET", "data": res["data"], "header_row_index": 1})
 
-    # 2. PROCESS EXPLICIT PAYMENT FILES FOR NODE 1 & 2
+    # 2. PROCESS EXPLICIT PAYMENT FILES
     for up_file in payment_upload_list:
         fname = up_file.filename or "payment_file.csv"
         content = await up_file.read()
@@ -166,29 +167,51 @@ async def create_and_process_batch(
     }
     node2_result = validation_node(node2_state)
 
-    total_records = sum(len(d.get("data", [])) for d in parsed_datasets if d.get("role") == "MASTER ORDER SHEET")
+    # ─────────────────────────────────────────────────────────────────────────
+    # 3. EXECUTE NODE 3: CANONICAL NORMALIZATION & LLM STATUS CLASSIFICATION
+    # ─────────────────────────────────────────────────────────────────────────
+    node3_state = {
+        "batch_id": batch_id,
+        "raw_datasets": parsed_datasets,
+        "column_mappings": node2_result.get("column_mappings", {})
+    }
+    node3_result = normalization_node(node3_state)
+
+    # Save Normalized Canonical Data Models to SQLite DB
+    canonical_orders = node3_result.get("canonical_orders", [])
+    canonical_payments = node3_result.get("canonical_payments", [])
+
+    if canonical_orders:
+        repo.save_canonical_orders(batch_id, canonical_orders)
+    if canonical_payments:
+        repo.save_canonical_payments(batch_id, canonical_payments)
+
+    total_records = len(canonical_orders)
     batch.total_records = total_records
     
     end_time = time.time()
     processing_time_ms = (end_time - start_time) * 1000.0
 
-    repo.update_batch_status(batch_id, "NODE_2_COMPLETE", processed_records=total_records, processing_time_ms=processing_time_ms)
-    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_2_VALIDATION", f"Node 2 complete. Mapped columns via LLM for {len(parsed_datasets)} datasets.")
+    repo.update_batch_status(batch_id, "NODE_3_COMPLETE", processed_records=total_records, processing_time_ms=processing_time_ms)
+    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_3_NORMALIZATION", f"Node 3 complete. Normalized {len(canonical_orders)} orders and {len(canonical_payments)} payments into SQLite.")
 
     print("\n" + "="*80)
-    print(f"  [NODE 1 ──▶ NODE 2 CHAIN EXECUTION STOPPED AS REQUESTED]")
+    print(f"  [NODE 1 ──▶ NODE 2 ──▶ NODE 3 CHAIN EXECUTION STOPPED AS REQUESTED]")
     print(f"  [BATCH ID] {batch_id}")
-    print(f"  [STATUS] NODE_2_COMPLETE — Ready for your verification!")
+    print(f"  [STATUS] NODE_3_COMPLETE — Ready for your verification!")
     print("="*80 + "\n")
 
     return {
         "batch_id": batch_id,
-        "status": "NODE_2_COMPLETE",
+        "status": "NODE_3_COMPLETE",
         "node_1_status": "COMPLETED",
         "node_2_status": "COMPLETED",
-        "sheets_profiled": len(node1_result.get("sheet_profiles", [])),
-        "column_mappings": node2_result.get("column_mappings", {}),
-        "validation_results": node2_result.get("validation_results", []),
+        "node_3_status": "COMPLETED",
+        "canonical_orders_count": len(canonical_orders),
+        "canonical_payments_count": len(canonical_payments),
+        "master_order_ids_count": node3_result.get("master_order_ids_count", 0),
+        "historical_payments_count": node3_result.get("historical_payments_count", 0),
+        "status_mappings": node3_result.get("status_mappings", {}),
         "processing_time_ms": round(processing_time_ms, 2)
     }
 
@@ -218,7 +241,7 @@ def get_batch_progress(batch_id: str, db: Session = Depends(get_db)):
     batch = repo.get_batch(batch_id)
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
-    progress_pct = 100 if batch.status in ("COMPLETED", "RECONCILED", "WAITING_HUMAN_REVIEW", "NODE_1_COMPLETE", "NODE_2_COMPLETE") else int((batch.processed_records / max(batch.total_records, 1)) * 100)
+    progress_pct = 100 if batch.status in ("COMPLETED", "RECONCILED", "WAITING_HUMAN_REVIEW", "NODE_1_COMPLETE", "NODE_2_COMPLETE", "NODE_3_COMPLETE") else int((batch.processed_records / max(batch.total_records, 1)) * 100)
     return {
         "batch_id": batch.batch_id,
         "status": batch.status,

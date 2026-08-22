@@ -42,15 +42,33 @@ Target Canonical Fields:
 - order_date: Date of order or transaction (e.g. "2026-06-01")
 
 Analyze the headers and sample values provided and output a valid JSON dictionary mapping canonical field names to the matching source column header name, with a confidence score (0.0 - 1.0) and rationale.
+"""
 
-Example Output JSON:
+STATUS_NORMALIZATION_PROMPT = """
+You are an AI Finance Controller specializing in order lifecycle and payment settlement status classification.
+
+Your task is to analyze unique raw status strings extracted from order manifests and payment settlement sheets, and categorize each raw status into one of the standardized canonical categories:
+
+Canonical Status Categories:
+- Delivered: Order successfully delivered to customer (e.g., "DELIVERED", "COMPLETED", "DELIVERED_TO_CUSTOMER").
+- Cancelled: Order cancelled prior to dispatch or converted to RTO (e.g., "CANCELLED", "CANCELED").
+- Shipped: Order dispatched or in-transit to customer (e.g., "SHIPPED", "DISPATCHED", "IN_TRANSIT", "ON_THE_WAY").
+- Return: Order returned by customer after delivery (e.g., "RETURN", "CUSTOMER_RETURN", "RETURNED").
+- Return_Initiated: Order return initiated by customer and currently in-transit back to seller (e.g., "RETURN_INITIATED", "RETURN_IN_TRANSIT").
+- RTO: Undelivered to customer and returned to seller (e.g., "RTO", "RETURN_TO_ORIGIN").
+- Claim: Compensation or seller claim credit (e.g., "CLAIM", "COMPENSATION_CLAIM").
+- Compensation: Lost or damaged package seller reimbursement (e.g., "COMPENSATION", "LOST_COMPENSATION").
+- Exchange: Item replacement or exchange credit (e.g., "EXCHANGE", "REPLACEMENT").
+- Deduction: Specific fee or platform charge deduction (e.g., "Return Assurance Fee", "Affiliate Fee", "Commission").
+
+Input raw status strings list will be provided. Respond with a valid JSON object mapping each raw status string to its canonical category and confidence score.
+
+Example JSON Output:
 {
-  "mappings": {
-    "order_id": {"source_column": "Sub Order Number", "confidence": 0.99, "rationale": "Contains unique order identifiers."},
-    "sku": {"source_column": "Seller SKU", "confidence": 0.98, "rationale": "Product SKU identifier."},
-    "quantity": {"source_column": "Units", "confidence": 0.95, "rationale": "Item quantity count."},
-    "status": {"source_column": "Live Order Status", "confidence": 0.97, "rationale": "Order lifecycle status."},
-    "amount": {"source_column": "Supplier Pricing", "confidence": 0.90, "rationale": "Financial order amount."}
+  "status_mappings": {
+    "DELIVERED": {"canonical_category": "Delivered", "confidence": 1.0},
+    "Return Assurance Fee": {"canonical_category": "Deduction", "confidence": 0.95},
+    "SHIPPED": {"canonical_category": "Shipped", "confidence": 0.98}
   }
 }
 """

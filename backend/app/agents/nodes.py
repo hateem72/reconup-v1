@@ -4,13 +4,15 @@ import pandas as pd
 from typing import Dict, Any, List
 from app.agents.state import FinanceState
 from app.finance.profiler import list_sheets, profile_sheet
-from app.finance.normalizer import normalize_status
+from app.finance.normalizer import normalize_status, llm_normalize_statuses, clean_quantity, parse_numeric_amount
 from app.finance.validator import validate_sales_data
-from app.finance.order_normalizer import llm_map_columns, validate_order_mapping
+from app.finance.order_normalizer import llm_map_columns, validate_order_mapping, normalize_canonical_orders
+from app.finance.payment_normalizer import auto_map_payment_columns, normalize_canonical_payments
 from app.finance.profit_calculator import group_by_sku, calculate_overall_profit
 from app.finance.reconciliation import process_reconciliation
 from app.finance.exception_detector import evaluate_batch_exceptions, detect_unknown_patterns
 from app.finance.metrics import calculate_batch_metrics
+from app.schemas.canonical import CanonicalOrder, CanonicalPayment
 from app.core.logging import log_stage
 
 def log_agent_call(agent_name: str, task: str, input_summary: str, output_summary: str, confidence: float, duration_sec: float):
@@ -113,8 +115,6 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
     log_stage("NODE 2", f"Starting Node 2 LLM Column Mapping for {len(raw_datasets)} datasets")
     all_mappings = {}
     validation_results = []
-    
-    # In-memory schema cache for identical payment/order spreadsheet headers
     schema_cache: Dict[tuple, Dict[str, Any]] = {}
     cache_hits = 0
 
@@ -131,7 +131,6 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
 
         print(f"\n--- [NODE 2 AI AGENT MAPPING DATASET #{idx+1}]: {fname} [{role}] ---")
         
-        # Check Header Schema Cache First!
         if schema_fingerprint in schema_cache:
             cache_hits += 1
             mapping_result = schema_cache[schema_fingerprint]
@@ -157,7 +156,6 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
                 if rat:
                     print(f"        Rationale: {rat}")
 
-        # Execute Python Structural Validation Guardrail
         df_data = pd.DataFrame(rows)
         is_valid, errors = validate_order_mapping(df_data, simple_map)
         val_status = "VALID" if is_valid else "WARNINGS_FOUND"
@@ -191,16 +189,159 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# NODE 3: CANONICAL MODEL NORMALIZATION & LLM STATUS CLASSIFICATION NODE
+# ─────────────────────────────────────────────────────────────────────────────
 def normalization_node(state: FinanceState) -> Dict[str, Any]:
-    """NODE 3: Normalizes raw status strings into CanonicalOrder and CanonicalPayment models."""
-    log_stage("NODE 3", "Executing Node 3: Canonical Model Normalization")
-    records = state.get("parsed_orders", [])
-    normalized = []
-    for r in records:
-        r_copy = dict(r)
-        r_copy["status"] = normalize_status(r.get("status", ""))
-        normalized.append(r_copy)
-    return {"normalized_records": normalized, "status": "NODE_3_NORMALIZED"}
+    """
+    NODE 3: StatusNormalizationAgent (Local LLM Ollama qwen2.5:3b) categorizes unique raw status
+    strings into canonical categories (Delivered, Return, RTO, Cancelled, Shipped, Return_Initiated, Claim).
+    Normalizes raw rows into CanonicalOrder and CanonicalPayment models with 100% source traceability.
+    """
+    start_time = time.time()
+    batch_id = state.get("batch_id", "batch_demo")
+    raw_datasets = state.get("raw_datasets", [])
+    column_mappings = state.get("column_mappings", {})
+
+    print("\n" + "="*80)
+    print(f"  [NODE 3: CANONICAL NORMALIZATION & LLM STATUS CLASSIFICATION] STARTED FOR BATCH: {batch_id}")
+    print("="*80)
+
+    log_stage("NODE 3", f"Starting Node 3 Normalization across {len(raw_datasets)} datasets")
+
+    # 1. Collect all unique raw status values across all datasets
+    raw_statuses = set()
+    for ds in raw_datasets:
+        fname = ds.get("filename", "")
+        rows = ds.get("data", [])
+        mapping = column_mappings.get(fname, {})
+        status_col = mapping.get("status", {}).get("source_column") if isinstance(mapping.get("status"), dict) else None
+        
+        # Fallback scan for status column if mapping missing or empty
+        if not status_col and rows and isinstance(rows[0], dict):
+            status_col = next((k for k in rows[0].keys() if "status" in k.lower() or "credit" in k.lower()), None)
+
+        if status_col:
+            for r in rows:
+                val = str(r.get(status_col, "")).strip()
+                if val and val.lower() != "nan":
+                    raw_statuses.add(val)
+
+    print(f"\n--- [NODE 3 AI AGENT: StatusNormalizationAgent] ---")
+    print(f"  • Extracted {len(raw_statuses)} unique raw status strings across datasets.")
+
+    # 2. Invoke Local LLM StatusNormalizationAgent
+    status_map = llm_normalize_statuses(list(raw_statuses))
+
+    print(f"  • AI Status Categorization Matrix ({len(status_map)} categories mapped):")
+    for raw_s, info in status_map.items():
+        cat = info.get("canonical_category", raw_s) if isinstance(info, dict) else raw_s
+        conf = info.get("confidence", 1.0) if isinstance(info, dict) else 1.0
+        print(f"      - \"{raw_s}\" ──▶ Canonical Category: [{cat}] (Confidence: {round(conf, 2)})")
+
+    # 3. Generate CanonicalOrder and CanonicalPayment Domain Models
+    canonical_orders: List[CanonicalOrder] = []
+    canonical_payments: List[CanonicalPayment] = []
+    master_order_ids = set()
+
+    for ds in raw_datasets:
+        fname = ds.get("filename", "")
+        role = ds.get("role", "MASTER ORDER SHEET")
+        rows = ds.get("data", [])
+        mapping = column_mappings.get(fname, {})
+
+        simple_map = {c_f: info.get("source_column") for c_f, info in mapping.items() if isinstance(info, dict)}
+        
+        order_id_col = simple_map.get("order_id") or "Sub Order No"
+        sku_col = simple_map.get("sku") or "SKU"
+        qty_col = simple_map.get("quantity") or "Quantity"
+        status_col = simple_map.get("status") or "Live Order Status"
+        date_col = simple_map.get("order_date") or simple_map.get("payment_date") or "Order Date"
+        amount_col = simple_map.get("amount") or "Final Settlement Amount"
+
+        if role == "MASTER ORDER SHEET":
+            print(f"\n--- [NORMALIZING MASTER ORDER SHEET]: {fname} ({len(rows)} rows) ---")
+            for idx, r in enumerate(rows):
+                oid = str(r.get(order_id_col, "")).strip()
+                if not oid or oid.lower() in ("nan", "null", "none"):
+                    continue
+
+                master_order_ids.add(oid)
+                raw_st = str(r.get(status_col, "")).strip()
+                norm_cat = status_map.get(raw_st, {}).get("canonical_category", raw_st) if isinstance(status_map.get(raw_st), dict) else normalize_status(raw_st)
+
+                c_ord = CanonicalOrder(
+                    order_id=oid,
+                    sku=str(r.get(sku_col, "")).strip(),
+                    product_name=str(r.get("Product Name", r.get("product_name", ""))).strip(),
+                    quantity=clean_quantity(r.get(qty_col, 1)),
+                    status=norm_cat,
+                    order_date=str(r.get(date_col, "")).strip(),
+                    source_platform="Meesho/Generic",
+                    source_file=fname,
+                    source_sheet="OrderSheet",
+                    source_row=idx + 2,
+                    raw_data={str(k): str(v) for k, v in r.items() if str(v).lower() != "nan"}
+                )
+                canonical_orders.append(c_ord)
+
+        else:
+            print(f"\n--- [NORMALIZING PAYMENT SETTLEMENT SHEET]: {fname} ({len(rows)} multi-event rows) ---")
+            for idx, r in enumerate(rows):
+                oid = str(r.get(order_id_col, "")).strip()
+                if not oid or oid.lower() in ("nan", "null", "none"):
+                    continue
+
+                raw_st = str(r.get(status_col, "")).strip()
+                norm_cat = status_map.get(raw_st, {}).get("canonical_category", raw_st) if isinstance(status_map.get(raw_st), dict) else normalize_status(raw_st)
+                amt_val = parse_numeric_amount(r.get(amount_col, 0.0))
+
+                c_pmt = CanonicalPayment(
+                    payment_id=f"pmt-{idx+1}-{oid}",
+                    order_id=oid,
+                    settlement_amount=amt_val,
+                    status=norm_cat,
+                    quantity=clean_quantity(r.get(qty_col, 1)),
+                    sku=str(r.get(sku_col, "")).strip(),
+                    payment_date=str(r.get(date_col, "")).strip(),
+                    source_platform="Meesho/Generic",
+                    source_file=fname,
+                    source_sheet="PaymentSheet",
+                    source_row=idx + 2,
+                    raw_data={str(k): str(v) for k, v in r.items() if str(v).lower() != "nan"}
+                )
+                canonical_payments.append(c_pmt)
+
+    # 4. Highlight Anchor Order Matching vs Historical Payments
+    historical_payments_count = sum(1 for p in canonical_payments if p.order_id not in master_order_ids)
+
+    print("\n" + "="*80)
+    print(f"  [NODE 3 SUMMARY]:")
+    print(f"  • Normalized Canonical Orders (Master Anchor): {len(canonical_orders)} records ({len(master_order_ids)} unique order IDs)")
+    print(f"  • Normalized Canonical Payments (Multi-Event): {len(canonical_payments)} settlement event lines")
+    print(f"  • Payment Rows Matching Master Anchor: {len(canonical_payments) - historical_payments_count} lines")
+    print(f"  • Historical Payment Lines (Previous Months): {historical_payments_count} lines")
+    print("="*80 + "\n")
+
+    log_agent_call(
+        agent_name="StatusNormalizationAgent",
+        task="Categorize raw statuses into canonical order lifecycle states",
+        input_summary=f"{len(raw_statuses)} unique raw status strings",
+        output_summary=f"Categorized into {len(status_map)} categories",
+        confidence=0.97,
+        duration_sec=time.time() - start_time
+    )
+
+    log_stage("NODE 3", f"Node 3 complete. Normalized {len(canonical_orders)} orders and {len(canonical_payments)} payments.")
+
+    return {
+        "canonical_orders": canonical_orders,
+        "canonical_payments": canonical_payments,
+        "master_order_ids_count": len(master_order_ids),
+        "historical_payments_count": historical_payments_count,
+        "status_mappings": status_map,
+        "status": "NODE_3_NORMALIZED"
+    }
 
 
 def pattern_detection_node(state: FinanceState) -> Dict[str, Any]:
