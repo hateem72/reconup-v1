@@ -65,18 +65,25 @@ Input raw status strings list will be provided. Respond with a valid JSON object
 """
 
 SHEET_RELEVANCE_PROMPT = """
-You are an AI Sheet Relevance Agent specializing in financial spreadsheet structure analysis.
+You are an AI Sheet Relevance Agent specializing in e-commerce financial spreadsheet analysis.
 
-Your task is to analyze metadata for an ingested spreadsheet sub-tab and determine whether this sub-tab is REQUIRED for order-level payment reconciliation and settlement calculations, or NOT_REQUIRED (e.g. advertisement summaries, referral text, empty disclaimer tabs, or non-transactional notes).
+Your task is to determine if an ingested spreadsheet sub-tab is REQUIRED for financial reconciliation and settlement processing, or NOT_REQUIRED.
 
-Decision Criteria:
-- REQUIRED: Contains order manifest rows, order IDs, product SKUs, or individual payment settlement transaction lines.
-- NOT_REQUIRED: Contains only advertisement cost summaries, referral text, reward notes, disclaimer text, or zero data rows.
+CRITICAL CLASSIFICATION RULES:
+- REQUIRED (ALWAYS RETAIN):
+  1. Any Master Order Sheet containing order placement or dispatch manifests.
+  2. Any Payment Settlement Sheet containing main order settlement lines, payouts, sale amounts, order IDs, or SKU transactions (e.g. "Order Payments", "Final Settlement Amount", "Sub Order No").
+  3. Any dataset with > 10 data rows.
+
+- NOT_REQUIRED (ONLY DROP IF ALL ARE TRUE):
+  1. The sub-tab is strictly an empty disclaimer tab (0 rows).
+  2. The sub-tab is an isolated advertisement expense summary tab titled "Ads Cost" with < 4 columns.
+  3. The sub-tab is a single-column promotional reward note titled "Referral Payments" with < 2 columns.
 
 Respond with a valid JSON object:
 {
   "verdict": "REQUIRED" or "NOT_REQUIRED",
   "confidence": 1.0,
-  "rationale": "Explanation of decision"
+  "rationale": "Clear explanation of classification decision"
 }
 """

@@ -130,19 +130,23 @@ def sheet_filtering_node(state: FinanceState) -> Dict[str, Any]:
         headers = [str(k) for k in rows[0].keys() if k != "id"] if rows and isinstance(rows[0], dict) else []
         row_cnt = len(rows)
 
-        # Deterministic pre-checks for Master Orders vs Non-Essential Sub-Tabs
-        is_master_order = role == "MASTER ORDER SHEET" or "order" in fname.lower() and "payment" not in fname.lower()
-        is_non_essential = row_cnt == 0 or len(headers) < 4 or any(k in fname.lower() for k in NON_ESSENTIAL_KEYWORDS)
+        # Deterministic checks for Master Orders, Order Payment Settlements, vs Non-Essential Sub-Tabs
+        is_master_order = role == "MASTER ORDER SHEET" or ("order" in fname.lower() and "payment" not in fname.lower())
+        is_order_payment_settlement = "order payments" in fname.lower() or ("payment" in role.upper() and row_cnt > 5)
+        has_transaction_headers = any(h_kw in str(headers).lower() for h_kw in ["sub order no", "final settlement amount", "live order status", "order date", "supplier sku", "amount"])
+
+        is_empty_or_disclaimer = row_cnt == 0 or "disclaimer" in fname.lower()
+        is_small_summary_tab = (row_cnt <= 5 and len(headers) < 4 and any(k in fname.lower() for k in ["ads cost", "referral", "reward id"]))
 
         verdict = "REQUIRED"
-        rationale = "Master Order manifest or transaction settlement tab"
+        rationale = "Transaction settlement or manifest dataset"
 
-        if is_master_order:
+        if is_master_order or is_order_payment_settlement or has_transaction_headers:
             verdict = "REQUIRED"
-            rationale = "Master Order Sheet containing order anchors"
-        elif is_non_essential:
+            rationale = "Master Order Manifest or Payment Settlement Sheet containing order transactions"
+        elif is_empty_or_disclaimer or is_small_summary_tab:
             verdict = "NOT_REQUIRED"
-            rationale = f"Non-essential summary/disclaimer tab ({row_cnt} rows, {len(headers)} cols)"
+            rationale = f"Non-transactional summary/disclaimer tab ({row_cnt} rows, {len(headers)} cols)"
         else:
             # Consult Local LLM for ambiguous sub-tabs
             try:
