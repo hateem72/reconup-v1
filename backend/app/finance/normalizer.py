@@ -61,8 +61,8 @@ def llm_normalize_statuses(raw_statuses: List[str]) -> Dict[str, Dict[str, Any]]
     log_stage("AGENT", f"Invoking StatusNormalizationAgent (Local LLM) for {len(unique_statuses)} unique raw statuses")
     
     try:
-        from app.agents.llm_factory import get_llm
-        from app.agents.prompts import STATUS_NORMALIZATION_PROMPT
+        from app.agents.core.llm_factory import get_llm
+        from app.agents.core.prompts import STATUS_NORMALIZATION_PROMPT
         
         llm = get_llm()
         prompt_input = (

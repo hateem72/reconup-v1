@@ -82,8 +82,8 @@ def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet
     llm_mappings = {}
 
     try:
-        from app.agents.llm_factory import get_llm
-        from app.agents.prompts import COLUMN_MAPPING_PROMPT
+        from app.agents.core.llm_factory import get_llm
+        from app.agents.core.prompts import COLUMN_MAPPING_PROMPT
         
         llm = get_llm()
         sample_clean = []
