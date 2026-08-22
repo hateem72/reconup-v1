@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.database.repositories import FinanceRepository
-from app.agents.llm_factory import get_llm
+from app.agents.core.llm_factory import get_llm
 
 router = APIRouter()
 

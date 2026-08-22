@@ -1,6 +1,6 @@
 from typing import Dict, Any
-from app.agents.state import FinanceState
-from app.agents.sheet_relevance_agent import SheetRelevanceAgent
+from app.agents.core.state import FinanceState
+from app.agents.specialized.sheet_relevance_agent import SheetRelevanceAgent
 
 def sheet_filtering_node(state: FinanceState) -> Dict[str, Any]:
     """NODE 1.5: Delegates to dedicated SheetRelevanceAgent to evaluate sub-tabs."""
