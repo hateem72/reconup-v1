@@ -297,7 +297,7 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
                 amt_val = parse_numeric_amount(r.get(amount_col, 0.0))
 
                 c_pmt = CanonicalPayment(
-                    payment_id=f"pmt-{idx+1}-{oid}",
+                    transaction_id=str(r.get("Transaction ID", r.get("transaction_id", f"pmt-{idx+1}-{oid}"))).strip(),
                     order_id=oid,
                     settlement_amount=amt_val,
                     status=norm_cat,

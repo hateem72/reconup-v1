@@ -17,7 +17,7 @@ class CanonicalOrder(BaseModel):
 
 
 class CanonicalPayment(BaseModel):
-    transaction_id: str = Field(description="Unique payment event ID")
+    transaction_id: str = Field(default="", description="Unique payment event ID")
     order_id: str = Field(description="Target order ID")
     sku: Optional[str] = Field(default="", description="Product SKU ID")
     status: str = Field(default="", description="Payment event status")
