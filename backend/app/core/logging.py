@@ -6,7 +6,10 @@ class StructuredConsoleFormatter(logging.Formatter):
     def format(self, record):
         timestamp = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
         stage = getattr(record, "stage", "SYSTEM")
-        return f"[{timestamp}] [{stage}] {record.getMessage()}"
+        msg = record.getMessage()
+        # Replace non-ascii currency symbols if standard stdout stream encoding requires ascii
+        msg_clean = msg.replace("₹", "INR ")
+        return f"[{timestamp}] [{stage}] {msg_clean}"
 
 def setup_logger(name: str = "finance_controller", level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger(name)
