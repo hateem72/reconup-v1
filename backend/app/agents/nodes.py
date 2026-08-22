@@ -14,38 +14,15 @@ Imports and re-exports all modular AI agent & graph pipeline node execution func
 """
 
 from app.agents.nodes.ingest_node import ingest_node
+from app.agents.nodes.relevance_node import sheet_filtering_node
 from app.agents.specialized.sheet_relevance_agent import SheetRelevanceAgent
 from app.agents.specialized.column_mapping_agent import validation_node, log_agent_call
 from app.agents.specialized.status_normalization_agent import normalization_node
-from app.agents.nodes.relevance_node import sheet_filtering_node
-
-def pattern_detection_node(state):
-    """NODE 4: Pattern detection stub handler."""
-    return {"status": "NODE_4_COMPLETE"}
-
-def reconciliation_node(state):
-    """NODE 5: Reconciliation node handler."""
-    from app.finance.reconciliation import reconcile_canonical_records
-    orders = state.get("canonical_orders", [])
-    payments = state.get("canonical_payments", [])
-    rec_res = reconcile_canonical_records(orders, payments)
-    return {
-        "reconciliation_results": rec_res,
-        "match_rate": rec_res.get("matchRate", 0.0),
-        "status": "NODE_5_RECONCILED"
-    }
-
-def financial_calculation_node(state):
-    return {"status": "NODE_6_CALCULATED"}
-
-def exception_analysis_node(state):
-    return {"exceptions": [], "human_review_required": False, "status": "NODE_7_EXCEPTIONS_ANALYZED"}
-
-def reprocessing_node(state):
-    return {"status": "REPROCESSED"}
-
-def report_node(state):
-    return {"final_report": {}, "status": "NODE_8_COMPLETED"}
+from app.agents.specialized.pattern_detection_agent import pattern_detection_node
+from app.agents.nodes.reconciliation_node import reconciliation_node
+from app.agents.nodes.financial_calculation_node import financial_calculation_node
+from app.agents.nodes.exception_analysis_node import exception_analysis_node, reprocessing_node
+from app.agents.nodes.report_node import report_node
 
 __all__ = [
     "log_agent_call",
