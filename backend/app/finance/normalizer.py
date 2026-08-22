@@ -49,6 +49,17 @@ def normalize_status(status: str) -> str:
     return status.strip()
 
 
+def parse_numeric_amount(amount_raw: Any, default: float = 0.0) -> float:
+    """Parses raw float amount stripping currency symbols and commas."""
+    if amount_raw is None or amount_raw == "":
+        return default
+    cleaned = re.sub(r'[₹$,\s]', '', str(amount_raw))
+    try:
+        return float(cleaned)
+    except ValueError:
+        return default
+
+
 def validate_and_clean_amount(amount_raw: Any) -> Tuple[bool, float, str]:
     """
     Validates amount format, strips currency symbols (₹, $), commas, and spaces.

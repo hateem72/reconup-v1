@@ -6,7 +6,7 @@ from app.database.database import Base
 class BatchModel(Base):
     __tablename__ = "batches"
 
-    id = Column(String, primary_key=True, index=True) # e.g. batch_123
+    id = Column(String, primary_key=True, index=True)
     batch_id = Column(String, index=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     status = Column(String, default="PENDING")
@@ -15,10 +15,82 @@ class BatchModel(Base):
     processed_records = Column(Integer, default=0)
     processing_time_ms = Column(Float, default=0.0)
 
+    files = relationship("FileModel", back_populates="batch", cascade="all, delete-orphan")
+    orders = relationship("OrderModel", back_populates="batch", cascade="all, delete-orphan")
+    payments = relationship("PaymentModel", back_populates="batch", cascade="all, delete-orphan")
     reconciliation_results = relationship("ReconciliationResultModel", back_populates="batch", cascade="all, delete-orphan")
     exceptions = relationship("ExceptionModel", back_populates="batch", cascade="all, delete-orphan")
     agent_decisions = relationship("AgentDecisionModel", back_populates="batch", cascade="all, delete-orphan")
     reports = relationship("ReportModel", back_populates="batch", cascade="all, delete-orphan")
+    audit_events = relationship("AuditEventModel", back_populates="batch", cascade="all, delete-orphan")
+
+
+class FileModel(Base):
+    __tablename__ = "files"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(String, ForeignKey("batches.id"), index=True)
+    filename = Column(String, index=True)
+    file_type = Column(String, default="SPREADSHEET")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    batch = relationship("BatchModel", back_populates="files")
+    sheets = relationship("SheetModel", back_populates="file", cascade="all, delete-orphan")
+
+
+class SheetModel(Base):
+    __tablename__ = "sheets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    file_id = Column(Integer, ForeignKey("files.id"), index=True)
+    sheet_name = Column(String, index=True)
+    row_count = Column(Integer, default=0)
+    column_count = Column(Integer, default=0)
+    detected_type = Column(String, default="UNKNOWN") # ORDER, PAYMENT, SUMMARY
+
+    file = relationship("FileModel", back_populates="sheets")
+
+
+class OrderModel(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(String, ForeignKey("batches.id"), index=True)
+    order_id = Column(String, index=True)
+    sku = Column(String, index=True, default="")
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=1)
+    status = Column(String, index=True, default="Unknown")
+    dispatch_date = Column(String, default="")
+    order_date = Column(String, default="")
+    source_file = Column(String, default="")
+    source_sheet = Column(String, default="")
+    source_row = Column(Integer, default=0)
+    raw_data = Column(JSON, default=dict)
+
+    batch = relationship("BatchModel", back_populates="orders")
+
+
+class PaymentModel(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(String, ForeignKey("batches.id"), index=True)
+    transaction_id = Column(String, index=True)
+    order_id = Column(String, index=True)
+    sku = Column(String, default="")
+    status = Column(String, default="")
+    quantity = Column(Integer, default=1)
+    payment_date = Column(String, default="")
+    settlement_amount = Column(Float, default=0.0)
+    transaction_type = Column(String, default="SETTLEMENT")
+    adjustment_reason = Column(String, default="")
+    source_file = Column(String, default="")
+    source_sheet = Column(String, default="")
+    source_row = Column(Integer, default=0)
+    raw_data = Column(JSON, default=dict)
+
+    batch = relationship("BatchModel", back_populates="payments")
 
 
 class ReconciliationResultModel(Base):
@@ -45,13 +117,13 @@ class ExceptionModel(Base):
     batch_id = Column(String, ForeignKey("batches.id"), index=True)
     record_id = Column(String, index=True)
     order_id = Column(String, index=True)
-    exception_type = Column(String, index=True) # UNKNOWN_DEDUCTION, MISSING_PAYMENT, MISSING_COST_PRICE, etc.
+    exception_type = Column(String, index=True)
     raw_status = Column(String, default="")
     amount = Column(Float, default=0.0)
     description = Column(Text, default="")
     agent_analysis = Column(Text, default="")
     confidence = Column(Float, default=0.0)
-    status = Column(String, default="PENDING", index=True) # PENDING, APPROVED, REJECTED, RESOLVED
+    status = Column(String, default="PENDING", index=True)
     human_decision = Column(String, default="")
     human_note = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -119,3 +191,17 @@ class ReportModel(Base):
     sku_breakdown_json = Column(JSON, default=dict)
 
     batch = relationship("BatchModel", back_populates="reports")
+
+
+class AuditEventModel(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(String, ForeignKey("batches.id"), index=True)
+    event_type = Column(String, index=True) # STAGE_START, AGENT_DECISION, HUMAN_REVIEW, ERROR
+    stage_name = Column(String, index=True)
+    description = Column(Text, default="")
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    batch = relationship("BatchModel", back_populates="audit_events")

@@ -3,13 +3,19 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.database.models import (
     BatchModel,
+    FileModel,
+    SheetModel,
+    OrderModel,
+    PaymentModel,
     ReconciliationResultModel,
     ExceptionModel,
     RuleRegistryModel,
     SkuCostModel,
     AgentDecisionModel,
-    ReportModel
+    ReportModel,
+    AuditEventModel
 )
+from app.schemas.canonical import CanonicalOrder, CanonicalPayment
 
 class FinanceRepository:
     def __init__(self, db: Session):
@@ -50,6 +56,53 @@ class FinanceRepository:
             self.db.commit()
             self.db.refresh(batch)
         return batch
+
+    # ── Canonical Records Persistence ────────────────────────────────
+    def save_canonical_orders(self, batch_id: str, orders: List[CanonicalOrder]) -> List[OrderModel]:
+        entities = []
+        for o in orders:
+            item = OrderModel(
+                batch_id=batch_id,
+                order_id=o.order_id,
+                sku=o.sku,
+                product_name=o.product_name,
+                quantity=o.quantity,
+                status=o.status,
+                dispatch_date=o.dispatch_date,
+                order_date=o.order_date,
+                source_file=o.source_file,
+                source_sheet=o.source_sheet,
+                source_row=o.source_row,
+                raw_data=o.raw_data
+            )
+            self.db.add(item)
+            entities.append(item)
+        self.db.commit()
+        return entities
+
+    def save_canonical_payments(self, batch_id: str, payments: List[CanonicalPayment]) -> List[PaymentModel]:
+        entities = []
+        for p in payments:
+            item = PaymentModel(
+                batch_id=batch_id,
+                transaction_id=p.transaction_id,
+                order_id=p.order_id,
+                sku=p.sku,
+                status=p.status,
+                quantity=p.quantity,
+                payment_date=p.payment_date,
+                settlement_amount=p.settlement_amount,
+                transaction_type=p.transaction_type,
+                adjustment_reason=p.adjustment_reason,
+                source_file=p.source_file,
+                source_sheet=p.source_sheet,
+                source_row=p.source_row,
+                raw_data=p.raw_data
+            )
+            self.db.add(item)
+            entities.append(item)
+        self.db.commit()
+        return entities
 
     # ── Reconciliation Results ─────────────────────────────────────
     def save_reconciliation_results(self, batch_id: str, results: List[Dict[str, Any]]) -> List[ReconciliationResultModel]:
@@ -182,7 +235,20 @@ class FinanceRepository:
             self.db.refresh(sc)
             return sc
 
-    # ── Agent Decisions Audit ─────────────────────────────────────
+    # ── Audit Events & Agent Decisions ──────────────────────────────
+    def log_audit_event(self, batch_id: str, event_type: str, stage_name: str, description: str, metadata: Dict[str, Any] = None) -> AuditEventModel:
+        ev = AuditEventModel(
+            batch_id=batch_id,
+            event_type=event_type,
+            stage_name=stage_name,
+            description=description,
+            metadata_json=metadata or {}
+        )
+        self.db.add(ev)
+        self.db.commit()
+        self.db.refresh(ev)
+        return ev
+
     def log_agent_decision(self, batch_id: str, exception_id: str, decision_type: str, decision: str, confidence: float, reasoning: str, context: Dict[str, Any] = None) -> AgentDecisionModel:
         ad = AgentDecisionModel(
             batch_id=batch_id,
