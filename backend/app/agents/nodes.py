@@ -150,9 +150,10 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
         for c_field, info in mappings.items():
             if isinstance(info, dict):
                 src_c = info.get("source_column", "N/A")
-                conf = info.get("confidence", 1.0)
+                conf = info.get("confidence")
+                conf_val = float(conf) if conf is not None else 1.0
                 rat = info.get("rationale", "")
-                print(f"      - Canonical [{c_field}] ──▶ \"{src_c}\" (Confidence: {round(conf, 2)})")
+                print(f"      - Canonical [{c_field}] ──▶ \"{src_c}\" (Confidence: {round(conf_val, 2)})")
                 if rat:
                     print(f"        Rationale: {rat}")
 
@@ -236,8 +237,9 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
     print(f"  • AI Status Categorization Matrix ({len(status_map)} categories mapped):")
     for raw_s, info in status_map.items():
         cat = info.get("canonical_category", raw_s) if isinstance(info, dict) else raw_s
-        conf = info.get("confidence", 1.0) if isinstance(info, dict) else 1.0
-        print(f"      - \"{raw_s}\" ──▶ Canonical Category: [{cat}] (Confidence: {round(conf, 2)})")
+        conf = info.get("confidence") if isinstance(info, dict) else 1.0
+        conf_val = float(conf) if conf is not None else 1.0
+        print(f"      - \"{raw_s}\" ──▶ Canonical Category: [{cat}] (Confidence: {round(conf_val, 2)})")
 
     # 3. Generate CanonicalOrder and CanonicalPayment Domain Models
     canonical_orders: List[CanonicalOrder] = []
