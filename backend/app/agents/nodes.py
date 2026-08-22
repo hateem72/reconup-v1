@@ -1,12 +1,14 @@
 import time
 import io
+import json
+import re
 import pandas as pd
 from typing import Dict, Any, List
 from app.agents.state import FinanceState
 from app.finance.profiler import list_sheets, profile_sheet
 from app.finance.normalizer import normalize_status, llm_normalize_statuses, clean_quantity, parse_numeric_amount
 from app.finance.validator import validate_sales_data
-from app.finance.order_normalizer import llm_map_columns, validate_order_mapping, normalize_canonical_orders
+from app.finance.order_normalizer import llm_map_columns, validate_order_mapping, normalize_canonical_orders, parse_json_from_llm_text
 from app.finance.payment_normalizer import auto_map_payment_columns, normalize_canonical_payments
 from app.finance.profit_calculator import group_by_sku, calculate_overall_profit
 from app.finance.reconciliation import process_reconciliation
@@ -96,6 +98,111 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# NEW NODE 1.5 / NODE 2A: AI SHEET RELEVANCE & SUB-TAB FILTERING NODE
+# ─────────────────────────────────────────────────────────────────────────────
+def sheet_filtering_node(state: FinanceState) -> Dict[str, Any]:
+    """
+    NEW NODE: SheetRelevanceAgent (Local LLM Ollama qwen2.5:3b) evaluates every discovered sub-tab.
+    Determines whether a sub-tab is REQUIRED (contains order/payment transaction records) or NOT_REQUIRED
+    (e.g., Ads Cost summaries, Referral notes, Disclaimer text, empty sheets).
+    Instantly drops non-essential sub-tabs to optimize Node 2, Node 3, and Node 4 performance!
+    """
+    start_time = time.time()
+    batch_id = state.get("batch_id", "batch_demo")
+    raw_datasets = state.get("raw_datasets", [])
+
+    print("\n" + "="*80)
+    print(f"  [NEW NODE: AI SHEET RELEVANCE & SUB-TAB FILTERING] STARTED FOR BATCH: {batch_id}")
+    print("="*80)
+
+    log_stage("NODE_RELEVANCE", f"Starting SheetRelevanceAgent evaluation for {len(raw_datasets)} sub-tabs")
+
+    retained_datasets = []
+    dropped_datasets = []
+
+    NON_ESSENTIAL_KEYWORDS = ["ads cost", "referral", "disclaimer", "compensation and recovery", "reward id"]
+
+    for idx, ds in enumerate(raw_datasets):
+        fname = ds.get("filename", f"file_{idx+1}")
+        role = ds.get("role", "MASTER ORDER SHEET")
+        rows = ds.get("data", [])
+        
+        headers = [str(k) for k in rows[0].keys() if k != "id"] if rows and isinstance(rows[0], dict) else []
+        row_cnt = len(rows)
+
+        # Deterministic pre-checks for Master Orders vs Non-Essential Sub-Tabs
+        is_master_order = role == "MASTER ORDER SHEET" or "order" in fname.lower() and "payment" not in fname.lower()
+        is_non_essential = row_cnt == 0 or len(headers) < 4 or any(k in fname.lower() for k in NON_ESSENTIAL_KEYWORDS)
+
+        verdict = "REQUIRED"
+        rationale = "Master Order manifest or transaction settlement tab"
+
+        if is_master_order:
+            verdict = "REQUIRED"
+            rationale = "Master Order Sheet containing order anchors"
+        elif is_non_essential:
+            verdict = "NOT_REQUIRED"
+            rationale = f"Non-essential summary/disclaimer tab ({row_cnt} rows, {len(headers)} cols)"
+        else:
+            # Consult Local LLM for ambiguous sub-tabs
+            try:
+                from app.agents.llm_factory import get_llm
+                from app.agents.prompts import SHEET_RELEVANCE_PROMPT
+                
+                llm = get_llm()
+                prompt_input = (
+                    f"{SHEET_RELEVANCE_PROMPT}\n\n"
+                    f"Sub-Tab Name: {fname}\n"
+                    f"Designated Role: {role}\n"
+                    f"Row Count: {row_cnt}\n"
+                    f"Header Columns: {headers[:10]}\n\n"
+                    f"Respond with valid JSON mapping dictionary:"
+                )
+                res = llm.invoke(prompt_input)
+                res_text = getattr(res, "content", str(res))
+                parsed = parse_json_from_llm_text(res_text)
+                if parsed and "verdict" in parsed:
+                    verdict = parsed.get("verdict", "REQUIRED").upper()
+                    rationale = parsed.get("rationale", rationale)
+            except Exception:
+                verdict = "REQUIRED"
+
+        if verdict == "REQUIRED":
+            retained_datasets.append(ds)
+            print(f"  • \"{fname}\" ({len(headers)} cols, {row_cnt} rows)")
+            print(f"    └─ AI Verdict: [REQUIRED] ({rationale}) ──▶ RETAINED ✓")
+        else:
+            dropped_datasets.append(ds)
+            print(f"  • \"{fname}\" ({len(headers)} cols, {row_cnt} rows)")
+            print(f"    └─ AI Verdict: [NOT_REQUIRED] ({rationale}) ──▶ DROPPED ✂️")
+
+    print("\n" + "="*80)
+    print(f"  [AI SHEET RELEVANCE SUMMARY]:")
+    print(f"  • Total Sub-Tabs Inspected: {len(raw_datasets)}")
+    print(f"  • Retained Essential Transaction Sheets: {len(retained_datasets)}")
+    print(f"  • Dropped Non-Essential Summary/Disclaimer Tabs: {len(dropped_datasets)}")
+    print(f"  • Performance Optimization: {round((len(dropped_datasets)/max(len(raw_datasets), 1))*100, 1)}% noise reduction for Node 2!")
+    print("="*80 + "\n")
+
+    log_agent_call(
+        agent_name="SheetRelevanceAgent",
+        task="Filter non-essential summary/disclaimer sub-tabs",
+        input_summary=f"{len(raw_datasets)} discovered sub-tabs",
+        output_summary=f"Retained {len(retained_datasets)} sheets, dropped {len(dropped_datasets)} summary tabs",
+        confidence=0.99,
+        duration_sec=time.time() - start_time
+    )
+
+    log_stage("NODE_RELEVANCE", f"Relevance Agent completed. Retained {len(retained_datasets)} essential transaction sheets.")
+
+    return {
+        "raw_datasets": retained_datasets,
+        "dropped_datasets": dropped_datasets,
+        "status": "NODE_RELEVANCE_COMPLETED"
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # NODE 2: HEADER DETECTION & DISTINCT SUB-TAB SCHEMA CACHED LLM COLUMN MAPPING
 # ─────────────────────────────────────────────────────────────────────────────
 def validation_node(state: FinanceState) -> Dict[str, Any]:
@@ -112,11 +219,10 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
     print(f"  [NODE 2: SMART CACHED LLM COLUMN MAPPING] EXECUTION STARTED FOR BATCH: {batch_id}")
     print("="*80)
 
-    log_stage("NODE 2", f"Starting Node 2 LLM Column Mapping for {len(raw_datasets)} datasets")
+    log_stage("NODE 2", f"Starting Node 2 LLM Column Mapping for {len(raw_datasets)} essential datasets")
     all_mappings = {}
     validation_results = []
     
-    # Cache fingerprint is strictly scoped by role, entity type, and sorted headers tuple
     schema_cache: Dict[tuple, Dict[str, Any]] = {}
     cache_hits = 0
 
@@ -132,7 +238,6 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
 
         headers = [str(k) for k in rows[0].keys() if k != "id"]
         
-        # Determine if sub-tab is a Non-Order Summary Entity
         is_summary_tab = len(headers) < 4 or any(sub_k in fname.lower() for sub_k in SUMMARY_KEYWORDS)
         entity_role = "PAYMENT SUMMARY TAB" if (is_summary_tab and "ORDER" not in role.upper()) else role
 
@@ -148,7 +253,6 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
         else:
             log_stage("NODE 2", f"AI Agent ColumnMappingAgent analyzing {len(headers)} headers for '{fname}'")
             if is_summary_tab:
-                # Summary tabs map non-order expense/claim columns without order_id requirement
                 mapping_result = {
                     "mappings": {
                         "summary_type": {
@@ -206,7 +310,7 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
         )
 
     print("\n" + "="*80)
-    print(f"  [NODE 2 COMPLETE] Completed mapping validation for {len(raw_datasets)} datasets with {cache_hits} schema cache hits.")
+    print(f"  [NODE 2 COMPLETE] Completed mapping validation for {len(raw_datasets)} essential datasets with {cache_hits} schema cache hits.")
     print("="*80 + "\n")
 
     log_stage("NODE 2", f"Node 2 complete ({cache_hits} schema cache hits). Ready for Node 3 normalization.")

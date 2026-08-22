@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.database.repositories import FinanceRepository
 from app.finance.parser import parse_csv_data, parse_excel_bytes, parse_zip_file
-from app.agents.nodes import ingest_node, validation_node, normalization_node, pattern_detection_node
+from app.agents.nodes import ingest_node, sheet_filtering_node, validation_node, normalization_node, pattern_detection_node
 from app.core.logging import log_stage
 
 router = APIRouter()
@@ -23,9 +23,12 @@ async def create_and_process_batch(
     db: Session = Depends(get_db)
 ):
     """
-    Creates a new batch and EXECUTES NODE 1 (Ingest & Header Profiling),
-    NODE 2 (LLM Column Mapping & Validation), NODE 3 (LLM Status Classification & Canonical Normalization),
-    and NODE 4 (Status Integrity Repair & Deduction/Credit Classification).
+    Creates a new batch and EXECUTES:
+    - NODE 1 (Ingest & Header Profiling)
+    - NODE 1.5 (AI Sheet Relevance & Sub-Tab Filtering)
+    - NODE 2 (LLM Column Mapping & Validation)
+    - NODE 3 (LLM Status Classification & Canonical Normalization)
+    - NODE 4 (Status Integrity Repair & Deduction/Credit Classification)
     Stops after Node 4 for step-by-step human verification.
     """
     start_time = time.time()
@@ -71,7 +74,7 @@ async def create_and_process_batch(
     filenames_summary = ", ".join([f.filename for f in all_upload_files]) if all_upload_files else "pasted_clipboard_data.csv"
     
     print("\n" + "="*80)
-    print(f"  [NODE 1 ──▶ NODE 2 ──▶ NODE 3 ──▶ NODE 4 CHAIN EXECUTION] BATCH CREATED: {batch_id}")
+    print(f"  [FULL CHAIN EXECUTION] BATCH CREATED: {batch_id}")
     print(f"  [ORDER FILES ({len(order_upload_list)})]: {[f.filename for f in order_upload_list]}")
     print(f"  [PAYMENT FILES ({len(payment_upload_list)})]: {[f.filename for f in payment_upload_list]}")
     print("="*80 + "\n")
@@ -159,11 +162,21 @@ async def create_and_process_batch(
     node1_result = ingest_node(node1_state)
 
     # ─────────────────────────────────────────────────────────────────────────
+    # 1.5 EXECUTE NEW NODE: AI SHEET RELEVANCE & SUB-TAB FILTERING NODE
+    # ─────────────────────────────────────────────────────────────────────────
+    filtering_state = {
+        "batch_id": batch_id,
+        "raw_datasets": node1_result.get("raw_datasets", [])
+    }
+    filtering_result = sheet_filtering_node(filtering_state)
+    essential_datasets = filtering_result.get("raw_datasets", [])
+
+    # ─────────────────────────────────────────────────────────────────────────
     # 2. EXECUTE NODE 2: LOCAL LLM COLUMN MAPPING & VALIDATION AGENT
     # ─────────────────────────────────────────────────────────────────────────
     node2_state = {
         "batch_id": batch_id,
-        "raw_datasets": parsed_datasets,
+        "raw_datasets": essential_datasets,
         "sheet_profiles": node1_result.get("sheet_profiles", [])
     }
     node2_result = validation_node(node2_state)
@@ -173,7 +186,7 @@ async def create_and_process_batch(
     # ─────────────────────────────────────────────────────────────────────────
     node3_state = {
         "batch_id": batch_id,
-        "raw_datasets": parsed_datasets,
+        "raw_datasets": essential_datasets,
         "column_mappings": node2_result.get("column_mappings", {})
     }
     node3_result = normalization_node(node3_state)
@@ -207,7 +220,7 @@ async def create_and_process_batch(
     repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_4_INTEGRITY", f"Node 4 complete. Audit verified 100% status coverage across {len(canonical_orders)} orders and {len(canonical_payments)} payments.")
 
     print("\n" + "="*80)
-    print(f"  [NODE 1 ──▶ NODE 2 ──▶ NODE 3 ──▶ NODE 4 CHAIN EXECUTION STOPPED AS REQUESTED]")
+    print(f"  [NODE 1 ──▶ NODE 1.5 (AI FILTERING) ──▶ NODE 2 ──▶ NODE 3 ──▶ NODE 4 CHAIN COMPLETE]")
     print(f"  [BATCH ID] {batch_id}")
     print(f"  [STATUS] NODE_4_COMPLETE — Ready for your verification!")
     print("="*80 + "\n")
@@ -216,9 +229,12 @@ async def create_and_process_batch(
         "batch_id": batch_id,
         "status": "NODE_4_COMPLETE",
         "node_1_status": "COMPLETED",
+        "node_relevance_status": "COMPLETED",
         "node_2_status": "COMPLETED",
         "node_3_status": "COMPLETED",
         "node_4_status": "COMPLETED",
+        "retained_sheets_count": len(essential_datasets),
+        "dropped_sheets_count": len(filtering_result.get("dropped_datasets", [])),
         "canonical_orders_count": len(canonical_orders),
         "canonical_payments_count": len(canonical_payments),
         "repaired_orders_count": node4_result.get("repaired_orders_count", 0),

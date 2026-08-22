@@ -62,13 +62,21 @@ Canonical Status Categories:
 - Deduction: Specific fee or platform charge deduction (e.g., "Return Assurance Fee", "Affiliate Fee", "Commission").
 
 Input raw status strings list will be provided. Respond with a valid JSON object mapping each raw status string to its canonical category and confidence score.
+"""
 
-Example JSON Output:
+SHEET_RELEVANCE_PROMPT = """
+You are an AI Sheet Relevance Agent specializing in financial spreadsheet structure analysis.
+
+Your task is to analyze metadata for an ingested spreadsheet sub-tab and determine whether this sub-tab is REQUIRED for order-level payment reconciliation and settlement calculations, or NOT_REQUIRED (e.g. advertisement summaries, referral text, empty disclaimer tabs, or non-transactional notes).
+
+Decision Criteria:
+- REQUIRED: Contains order manifest rows, order IDs, product SKUs, or individual payment settlement transaction lines.
+- NOT_REQUIRED: Contains only advertisement cost summaries, referral text, reward notes, disclaimer text, or zero data rows.
+
+Respond with a valid JSON object:
 {
-  "status_mappings": {
-    "DELIVERED": {"canonical_category": "Delivered", "confidence": 1.0},
-    "Return Assurance Fee": {"canonical_category": "Deduction", "confidence": 0.95},
-    "SHIPPED": {"canonical_category": "Shipped", "confidence": 0.98}
-  }
+  "verdict": "REQUIRED" or "NOT_REQUIRED",
+  "confidence": 1.0,
+  "rationale": "Explanation of decision"
 }
 """
