@@ -96,13 +96,13 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# NODE 2: HEADER DETECTION & SMART CACHED LLM COLUMN MAPPING VALIDATION NODE
+# NODE 2: HEADER DETECTION & DISTINCT SUB-TAB SCHEMA CACHED LLM COLUMN MAPPING
 # ─────────────────────────────────────────────────────────────────────────────
 def validation_node(state: FinanceState) -> Dict[str, Any]:
     """
     NODE 2: ColumnMappingAgent (Local LLM Ollama qwen2.5:3b) semantically maps raw column
-    headers to canonical domain fields with smart schema caching for identical payment sheets.
-    Master Order Sheets map order_id, sku, quantity, status, order_date (Amount excluded).
+    headers to canonical domain fields with distinct sub-tab schema caching.
+    Considers each sub-tab (Order Payments vs Ads Cost vs Disclaimer) as an independent entity!
     """
     start_time = time.time()
     batch_id = state.get("batch_id", "batch_demo")
@@ -115,8 +115,12 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
     log_stage("NODE 2", f"Starting Node 2 LLM Column Mapping for {len(raw_datasets)} datasets")
     all_mappings = {}
     validation_results = []
+    
+    # Cache fingerprint is strictly scoped by role, entity type, and sorted headers tuple
     schema_cache: Dict[tuple, Dict[str, Any]] = {}
     cache_hits = 0
+
+    SUMMARY_KEYWORDS = ["ads cost", "referral", "disclaimer", "compensation and recovery", "reward id"]
 
     for idx, ds in enumerate(raw_datasets):
         fname = ds.get("filename", f"file_{idx+1}")
@@ -127,18 +131,36 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
             continue
 
         headers = [str(k) for k in rows[0].keys() if k != "id"]
-        schema_fingerprint = (role, tuple(sorted(headers)))
+        
+        # Determine if sub-tab is a Non-Order Summary Entity
+        is_summary_tab = len(headers) < 4 or any(sub_k in fname.lower() for sub_k in SUMMARY_KEYWORDS)
+        entity_role = "PAYMENT SUMMARY TAB" if (is_summary_tab and "ORDER" not in role.upper()) else role
 
-        print(f"\n--- [NODE 2 AI AGENT MAPPING DATASET #{idx+1}]: {fname} [{role}] ---")
+        schema_fingerprint = (entity_role, is_summary_tab, tuple(sorted(headers)))
+
+        print(f"\n--- [NODE 2 AI AGENT MAPPING DATASET #{idx+1}]: {fname} [{entity_role}] ---")
         
         if schema_fingerprint in schema_cache:
             cache_hits += 1
             mapping_result = schema_cache[schema_fingerprint]
-            print(f"  ⚡ [SCHEMA CACHE HIT]: Headers match previously mapped {role}. Reusing cached AI mapping matrix (0s LLM latency)!")
+            print(f"  ⚡ [SCHEMA CACHE HIT]: Headers match previously mapped {entity_role}. Reusing cached AI mapping matrix (0s LLM latency)!")
             log_stage("NODE 2", f"Reusing cached LLM mapping matrix for '{fname}' (Cache Hit #{cache_hits})")
         else:
             log_stage("NODE 2", f"AI Agent ColumnMappingAgent analyzing {len(headers)} headers for '{fname}'")
-            mapping_result = llm_map_columns(headers, rows, sheet_role=role)
+            if is_summary_tab:
+                # Summary tabs map non-order expense/claim columns without order_id requirement
+                mapping_result = {
+                    "mappings": {
+                        "summary_type": {
+                            "source_column": headers[0] if headers else "N/A",
+                            "confidence": 1.0,
+                            "rationale": f"Summary sub-tab entity mapped first header '{headers[0] if headers else 'N/A'}'."
+                        }
+                    }
+                }
+            else:
+                mapping_result = llm_map_columns(headers, rows, sheet_role=role)
+
             schema_cache[schema_fingerprint] = mapping_result
 
         mappings = mapping_result.get("mappings", {})
@@ -158,17 +180,16 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
                     print(f"        Rationale: {rat}")
 
         df_data = pd.DataFrame(rows)
-        is_summary_tab = len(headers) < 4 or any(sub_k in fname.lower() for sub_k in ["ads cost", "referral", "disclaimer", "compensation and recovery"])
         
         if is_summary_tab:
             is_valid = True
             errors = []
-            val_status = "SUMMARY_SHEET (No order_id required)"
+            val_status = "SUMMARY_SHEET (Distinct Entity - No order_id required)"
         else:
             is_valid, errors = validate_order_mapping(df_data, simple_map)
             val_status = "VALID" if is_valid else "WARNINGS_FOUND"
 
-        validation_results.append({"filename": fname, "role": role, "is_valid": is_valid, "errors": errors})
+        validation_results.append({"filename": fname, "role": entity_role, "is_valid": is_valid, "errors": errors})
 
         print(f"  • Python Structural Guardrail Check: {val_status}")
         if errors:
@@ -177,7 +198,7 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
 
         log_agent_call(
             agent_name="ColumnMappingAgent",
-            task=f"Map {role} headers to canonical domain schema",
+            task=f"Map {entity_role} headers to canonical domain schema",
             input_summary=f"{len(headers)} raw column headers",
             output_summary=f"Mapped {len(simple_map)} fields for {fname} (Cache Hits: {cache_hits})",
             confidence=0.98,
@@ -318,7 +339,7 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
                 )
                 canonical_payments.append(c_pmt)
 
-    # 4. Filter payment lines to strictly retain only those matching Master Order Sheet Order IDs
+    # Filter payment lines to strictly retain only those matching Master Order Sheet Order IDs
     filtered_payments = [p for p in canonical_payments if p.order_id in master_order_ids]
     discarded_count = len(canonical_payments) - len(filtered_payments)
 
@@ -372,7 +393,6 @@ def pattern_detection_node(state: FinanceState) -> Dict[str, Any]:
 
     log_stage("NODE 4", f"Starting Node 4 Status Integrity Audit across {len(canonical_orders)} orders and {len(canonical_payments)} payment events")
 
-    # 1. AUDIT & REPAIR MASTER ORDER SHEET STATUSES
     repaired_orders_count = 0
     valid_orders_count = 0
 
@@ -397,7 +417,7 @@ def pattern_detection_node(state: FinanceState) -> Dict[str, Any]:
                 order.status = repaired_val
                 repaired_orders_count += 1
             else:
-                order.status = "Delivered"  # Default assumption for manifest entries if unspecified
+                order.status = "Delivered"
                 repaired_orders_count += 1
         else:
             valid_orders_count += 1
@@ -408,7 +428,6 @@ def pattern_detection_node(state: FinanceState) -> Dict[str, Any]:
     print(f"  • Blank/Null Status Repaired via Secondary Columns: {repaired_orders_count} orders")
     print(f"  • Order Status Integrity: 100.0% Coverage (0 blank status records)")
 
-    # 2. CLASSIFY PAYMENT SETTLEMENT NON-ORDER ROWS (DEDUCTIONS vs CREDITS)
     classified_deductions = 0
     classified_credits = 0
     classified_order_payments = 0
