@@ -276,6 +276,9 @@ class FinanceRepository:
             return sc
 
     # ── Audit Events & Agent Decisions ──────────────────────────────
+    def get_audit_events(self, batch_id: str) -> List[AuditEventModel]:
+        return self.db.query(AuditEventModel).filter(AuditEventModel.batch_id == batch_id).order_by(AuditEventModel.created_at.asc()).all()
+
     def log_audit_event(self, batch_id: str, event_type: str, stage_name: str, description: str, metadata: Dict[str, Any] = None) -> AuditEventModel:
         ev = AuditEventModel(
             batch_id=batch_id,

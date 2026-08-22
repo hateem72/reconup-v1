@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Maximize2, Minimize2, Trash2, ChevronRight } from 'lucide-react';
+import { Terminal, Maximize2, Minimize2, Trash2, ChevronRight, RefreshCw } from 'lucide-react';
 
 export default function TerminalConsole({ batchId, isProcessing }) {
   const [logs, setLogs] = useState([]);
@@ -7,18 +7,28 @@ export default function TerminalConsole({ batchId, isProcessing }) {
   const consoleEndRef = useRef(null);
 
   useEffect(() => {
-    if (batchId) {
-      setLogs((prev) => [
-        ...prev,
-        `[SYSTEM] Batch ${batchId} initialized. Invoking Agent Pipeline...`,
-        `[NODE 1] Profiled exact headers across uploaded workbooks.`,
-        `[AGENT] SheetRelevanceAgent (Local LLM qwen2.5:3b) evaluating sub-tab relevance...`,
-        `[AGENT] ColumnMappingAgent mapping raw headers to canonical fields...`,
-        `[AGENT] StatusNormalizationAgent categorizing lifecycle states...`,
-        `[NODE 4] Audit completed: 100.0% status coverage verified.`,
-        `[NODE 5] ReconciliationEngine matching Master Orders & aggregating Net Payouts.`
-      ]);
-    }
+    if (!batchId) return;
+
+    const fetchLogs = async () => {
+      try {
+        const res = await fetch(`/api/batches/${batchId}/logs`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.logs && data.logs.length > 0) {
+            const formatted = data.logs.map(
+              (l) => `[${l.stage || 'STAGE'}] ${l.description}`
+            );
+            setLogs(formatted);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching audit logs:", err);
+      }
+    };
+
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 1500);
+    return () => clearInterval(interval);
   }, [batchId]);
 
   useEffect(() => {
@@ -26,14 +36,19 @@ export default function TerminalConsole({ batchId, isProcessing }) {
   }, [logs]);
 
   return (
-    <div className="mb-8 rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden font-mono text-xs">
+    <div className="mb-8 rounded-2xl bg-white border border-slate-200 shadow-xs overflow-hidden font-mono text-xs">
       <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Terminal className="w-4 h-4 text-blue-600" />
-          <span className="font-bold text-slate-800">Live Agentic Execution Terminal Stream</span>
-          {isProcessing && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-800 border border-blue-200 font-bold animate-pulse">
-              Agent Execution Active
+          <span className="font-bold text-slate-800">Live Agentic Audit Log Terminal</span>
+          {isProcessing ? (
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-800 border border-blue-200 font-bold flex items-center gap-1 animate-pulse">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              Real-time Polling
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold">
+              ✓ Synced
             </span>
           )}
         </div>
@@ -68,9 +83,8 @@ export default function TerminalConsole({ batchId, isProcessing }) {
           </div>
         ) : (
           logs.map((log, idx) => {
-            const isAgent = log.includes('[AGENT]');
-            const isNode = log.includes('[NODE');
-            const isSystem = log.includes('[SYSTEM]');
+            const isAgent = log.includes('AGENT') || log.includes('RELEVANCE') || log.includes('MAPPING');
+            const isNode = log.includes('NODE') || log.includes('STAGE_COMPLETE');
 
             return (
               <div key={idx} className="flex items-start gap-2 leading-relaxed">
@@ -81,9 +95,7 @@ export default function TerminalConsole({ batchId, isProcessing }) {
                       ? 'text-cyan-400 font-semibold'
                       : isNode
                       ? 'text-emerald-400 font-semibold'
-                      : isSystem
-                      ? 'text-amber-300 font-bold'
-                      : 'text-slate-300'
+                      : 'text-slate-200'
                   }
                 >
                   {log}

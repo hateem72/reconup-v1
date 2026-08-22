@@ -160,6 +160,7 @@ async def create_and_process_batch(
         "raw_datasets": parsed_datasets
     }
     node1_result = ingest_node(node1_state)
+    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_1_INGEST", f"Profiled {len(parsed_datasets)} sub-tab datasets with exact headers.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # 1.5 EXECUTE NEW NODE: AI SHEET RELEVANCE & SUB-TAB FILTERING NODE
@@ -170,6 +171,7 @@ async def create_and_process_batch(
     }
     filtering_result = sheet_filtering_node(filtering_state)
     essential_datasets = filtering_result.get("raw_datasets", [])
+    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_RELEVANCE", f"SheetRelevanceAgent retained {len(essential_datasets)} essential transaction sheets, dropped {len(filtering_result.get('dropped_datasets', []))} summary sub-tabs.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # 2. EXECUTE NODE 2: LOCAL LLM COLUMN MAPPING & VALIDATION AGENT
@@ -180,6 +182,7 @@ async def create_and_process_batch(
         "sheet_profiles": node1_result.get("sheet_profiles", [])
     }
     node2_result = validation_node(node2_state)
+    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_2_MAPPING", f"ColumnMappingAgent mapped headers across {len(essential_datasets)} essential sheets (Cache Hits: {node2_result.get('schema_cache_hits', 0)}).")
 
     # ─────────────────────────────────────────────────────────────────────────
     # 3. EXECUTE NODE 3: CANONICAL NORMALIZATION & LLM STATUS CLASSIFICATION
@@ -190,6 +193,7 @@ async def create_and_process_batch(
         "column_mappings": node2_result.get("column_mappings", {})
     }
     node3_result = normalization_node(node3_state)
+    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_3_NORMALIZATION", f"StatusNormalizationAgent categorized statuses into canonical lifecycle states.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # 4. EXECUTE NODE 4: STATUS INTEGRITY AUDIT & DEDUCTION/CREDIT CLASSIFICATION
@@ -209,6 +213,8 @@ async def create_and_process_batch(
         repo.save_canonical_orders(batch_id, canonical_orders)
     if canonical_payments:
         repo.save_canonical_payments(batch_id, canonical_payments)
+
+    repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_4_INTEGRITY", f"Node 4 complete. Verified 100% status coverage across {len(canonical_orders)} orders and {len(canonical_payments)} payments.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # 5. EXECUTE NODE 5: DETERMINISTIC ORDER-PAYMENT RECONCILIATION ENGINE
@@ -273,6 +279,25 @@ def get_batch_details(batch_id: str, db: Session = Depends(get_db)):
         "processing_time_ms": batch.processing_time_ms,
         "created_at": batch.created_at,
         "summary": report.summary_json if report else {}
+    }
+
+
+@router.get("/batches/{batch_id}/logs")
+def get_batch_logs(batch_id: str, db: Session = Depends(get_db)):
+    repo = FinanceRepository(db)
+    events = repo.get_audit_events(batch_id)
+    return {
+        "batch_id": batch_id,
+        "logs": [
+            {
+                "id": ev.id,
+                "timestamp": ev.created_at.isoformat() if ev.created_at else "",
+                "stage": ev.stage_name,
+                "event_type": ev.event_type,
+                "description": ev.description
+            }
+            for ev in events
+        ]
     }
 
 

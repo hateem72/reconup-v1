@@ -19,6 +19,7 @@ export default function App() {
   const [resetNotification, setResetNotification] = useState('');
 
   const fetchBatchData = async (batchId) => {
+    if (!batchId) return;
     try {
       const recRes = await fetch(`/api/batches/${batchId}/reconciliation`);
       if (recRes.ok) {
@@ -36,10 +37,10 @@ export default function App() {
     }
   };
 
-  const handleUploadSuccess = (data) => {
+  const handleUploadSuccess = async (data) => {
     setActiveBatchId(data.batch_id);
-    fetchBatchData(data.batch_id);
-    setPipelineStep(4); // Advance to Step 4: Order Reconciliation FIRST!
+    await fetchBatchData(data.batch_id);
+    setPipelineStep(4); // Advance directly to Step 4: Order Reconciliation
   };
 
   const handleHardReset = async () => {
@@ -88,7 +89,7 @@ ORD-1010\tCancelled\t200`;
       if (res.ok) {
         setActiveBatchId(data.batch_id);
         await fetchBatchData(data.batch_id);
-        setPipelineStep(4); // Advance to Step 4: Order Reconciliation FIRST!
+        setPipelineStep(4); // Advance to Step 4: Order Reconciliation
       }
     } catch (err) {
       console.error("Error running synthetic demo:", err);
