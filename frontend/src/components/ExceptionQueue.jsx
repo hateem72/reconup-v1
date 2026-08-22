@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertOctagon, CheckCircle2, XCircle, Sparkles, ShieldAlert, Cpu } from 'lucide-react';
+import { AlertOctagon, CheckCircle2, XCircle, Sparkles, ShieldAlert, Cpu, Layers } from 'lucide-react';
 
 export default function ExceptionQueue({ exceptions, batchId, onExceptionResolved }) {
   const [processingId, setProcessingId] = useState(null);
@@ -10,7 +10,7 @@ export default function ExceptionQueue({ exceptions, batchId, onExceptionResolve
         <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto mb-2" />
         <h3 className="text-sm font-extrabold text-slate-900">Zero Unresolved Exceptions</h3>
         <p className="text-xs text-slate-600 max-w-lg mx-auto mt-1 font-medium">
-          All records in this batch resolved with 100% precision through the deterministic engine & persistent rule registry.
+          All order records matched 100% cleanly against payment settlement files.
         </p>
       </div>
     );
@@ -26,7 +26,7 @@ export default function ExceptionQueue({ exceptions, batchId, onExceptionResolve
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           decision: 'APPROVE',
-          note: 'Approved by finance operator',
+          note: 'Approved by human finance operator',
           target_category: rawStatus.toUpperCase(),
           financial_effect: 'SUBTRACT'
         })
@@ -47,7 +47,7 @@ export default function ExceptionQueue({ exceptions, batchId, onExceptionResolve
       const res = await fetch(`/api/exceptions/${id}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision: 'REJECT', note: 'Rejected by human operator' })
+        body: JSON.stringify({ decision: 'REJECT', note: 'Acknowledged by human operator' })
       });
       const data = await res.json();
       onExceptionResolved(data);
@@ -67,26 +67,29 @@ export default function ExceptionQueue({ exceptions, batchId, onExceptionResolve
           </div>
           <div>
             <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-              Step 3: Human Governance & Unknown Pattern Verification
+              Step 3: Human Governance & Aggregated Pattern Review
             </h2>
-            <p className="text-xs text-amber-900 font-medium">AI agent isolated new marketplace deduction rules requiring verification</p>
+            <p className="text-xs text-amber-900 font-medium">Grouped high-level exception cards surfacing reconciliation discrepancies & unknown deduction rules</p>
           </div>
         </div>
 
         <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-200 text-amber-900 border border-amber-300 shadow-xs">
-          {pendingExceptions.length} Rule Approvals Required
+          {pendingExceptions.length} Governance Cards Total
         </span>
       </div>
 
       <div className="space-y-4">
         {pendingExceptions.map((exc) => {
-          const confidencePct = Math.round(exc.confidence * 100);
+          const confidencePct = Math.round((exc.confidence || 0.85) * 100);
+          const isRulePattern = exc.exception_type === 'UNKNOWN_DEDUCTION';
+
           return (
-            <div key={exc.id} className="p-5 rounded-2xl bg-white border border-slate-200 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 shadow-sm hover:border-slate-300 transition">
+            <div key={exc.id || exc.record_id} className="p-5 rounded-2xl bg-white border border-slate-200 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 shadow-sm hover:border-slate-300 transition">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="text-xs font-mono font-extrabold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200">
-                    Pattern: {exc.raw_status || exc.exception_type}
+                  <span className="text-xs font-mono font-extrabold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-amber-700" />
+                    {exc.raw_status || exc.exception_type}
                   </span>
                   <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
                     <Cpu className="w-3.5 h-3.5 text-blue-600" />
@@ -101,9 +104,13 @@ export default function ExceptionQueue({ exceptions, batchId, onExceptionResolve
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2 text-xs">
                   <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold text-indigo-900">AI Recommendation:</span>
+                    <span className="font-bold text-indigo-900">AI Analysis & Action Proposal:</span>
                     <span className="text-slate-700 ml-1 font-medium">
-                      Classify pattern <strong>'{exc.raw_status}'</strong> as <span className="text-rose-600 font-extrabold">SUBTRACT DEDUCTION</span>. Approving will persist this rule to SQLite database and reprocess all affected records.
+                      {isRulePattern ? (
+                        <>Classify unknown pattern <strong>'{exc.raw_status}'</strong> as <span className="text-rose-600 font-extrabold">SUBTRACT DEDUCTION</span>. Approving persists this rule to database and reprocesses batch.</>
+                      ) : (
+                        <>Acknowledge reconciliation discrepancy card. Data records match master Order Sheet anchor.</>
+                      )}
                     </span>
                   </div>
                 </div>
@@ -112,20 +119,20 @@ export default function ExceptionQueue({ exceptions, batchId, onExceptionResolve
               {/* Action Buttons */}
               <div className="flex items-center gap-3 w-full lg:w-auto justify-end border-t lg:border-t-0 border-slate-200 pt-3 lg:pt-0">
                 <button
-                  onClick={() => handleReject(exc.id)}
-                  disabled={processingId === exc.id}
+                  onClick={() => handleReject(exc.id || exc.record_id)}
+                  disabled={processingId === (exc.id || exc.record_id)}
                   className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition disabled:opacity-50"
                 >
                   <XCircle className="w-4 h-4 inline mr-1.5" />
-                  Reject
+                  Dismiss
                 </button>
                 <button
-                  onClick={() => handleApprove(exc.id, exc.raw_status)}
-                  disabled={processingId === exc.id}
+                  onClick={() => handleApprove(exc.id || exc.record_id, exc.raw_status)}
+                  disabled={processingId === (exc.id || exc.record_id)}
                   className="px-5 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-4 h-4 inline mr-1.5" />
-                  Approve Rule & Reprocess Batch
+                  {isRulePattern ? 'Approve Rule & Reprocess Batch' : 'Acknowledge Discrepancy'}
                 </button>
               </div>
             </div>

@@ -4,11 +4,13 @@ from app.core.logging import log_stage
 
 def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[Any]) -> Dict[str, Any]:
     """
-    Reconciles order records against payment settlement records.
-    Supports dictionary list order rows and array payment rows.
+    Reconciles Order Sheet records against multi-line Payment settlement records.
+    The Order Sheet is the MASTER ANCHOR set. Extra payment entries for historical orders
+    not present in the current Order Sheet are categorized separately and DO NOT penalize match rate.
     """
-    log_stage("RECONCILER", f"Starting reconciliation across {len(orders_raw)} raw orders and {len(payments_raw)} raw payments")
-    # 1. Process Orders
+    log_stage("RECONCILER", f"Starting reconciliation: Master Order Sheet ({len(orders_raw)} orders) vs Payment Settlement ({len(payments_raw)} lines)")
+    
+    # 1. Process Master Order Sheet
     orders = []
     for row in orders_raw:
         order_id = str(row.get("Sub Order No", row.get("orderId", "")) or "").strip()
@@ -28,7 +30,7 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
             "orderStatus": status
         })
 
-    # 2. Process Payments
+    # 2. Process Multi-Event Payment Settlement Sheet
     payment_rows = payments_raw[3:] if len(payments_raw) > 3 and isinstance(payments_raw[0], list) else payments_raw
     payment_map: Dict[str, Dict[str, Any]] = {}
     compensation_fees: List[Dict[str, Any]] = []
@@ -75,6 +77,7 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
             })
             continue
 
+        # Aggregate multi-line settlement entries for the same order_id
         if order_id not in payment_map:
             payment_map[order_id] = {
                 "orderId": order_id,
@@ -90,7 +93,7 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
             payment_map[order_id]["totalPayment"] += amount
             payment_map[order_id]["qty"] += qty
 
-    # 3. Match Orders with Payments
+    # 3. Match Master Order Sheet against Multi-Event Payment Map
     matched: List[Dict[str, Any]] = []
     missing_in_payment: List[Dict[str, Any]] = []
     
@@ -137,7 +140,7 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
                 "matchStatus": "MISSING_PAYMENT"
             })
 
-    # Unmatched payments missing in order list
+    # Unmatched payment lines referencing historical order IDs not in current Order Sheet
     missing_in_order = []
     for oid, pm in payment_map.items():
         if not pm["processed"]:
@@ -149,14 +152,15 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
                 "qty": pm["qty"],
                 "paymentStatuses": joined_status,
                 "totalPayment": round(pm["totalPayment"], 4),
-                "matchStatus": "MISSING_ORDER"
+                "matchStatus": "HISTORICAL_PAYMENT_ROW"
             })
 
+    # Match Rate is calculated STRICTLY against Master Order Sheet count
     total_orders = len(orders)
     matched_count = len(matched)
     match_rate = (matched_count / total_orders * 100.0) if total_orders > 0 else 0.0
 
-    log_stage("RECONCILER", f"Reconciliation finished: {matched_count}/{total_orders} matched ({round(match_rate, 2)}% match rate)")
+    log_stage("RECONCILER", f"Order Sheet Match Result: {matched_count}/{total_orders} matched ({round(match_rate, 2)}% match rate). Found {len(missing_in_order)} historical payment rows.")
 
     return {
         "matched": matched,

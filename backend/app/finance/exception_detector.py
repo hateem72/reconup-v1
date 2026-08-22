@@ -11,7 +11,7 @@ DEFAULT_KNOWN_CATEGORIES = {
 def detect_unknown_patterns(records: List[Dict[str, Any]], active_rules: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Scans sales or settlement records to identify unknown/unrecognized status patterns.
-    Groups multiple occurrences into single actionable review items with aggregated financial exposure.
+    GROUPS multiple occurrences into SINGLE actionable review items with aggregated financial exposure.
     """
     if active_rules is None:
         active_rules = []
@@ -56,11 +56,11 @@ def detect_unknown_patterns(records: List[Dict[str, Any]], active_rules: List[Di
         sample_str = ", ".join(info["sample_orders"])
         exceptions.append({
             "record_id": f"pattern-{pattern.lower().replace(' ', '-')}",
-            "order_id": sample_str,
+            "order_id": f"{info['count']} Orders (Samples: {sample_str})",
             "exception_type": "UNKNOWN_DEDUCTION",
             "raw_status": pattern,
             "amount": round(info["total_amount"], 4),
-            "description": f"Detected unknown pattern '{pattern}' affecting {info['count']} records (Total exposure: ₹{round(info['total_amount'], 2)}).",
+            "description": f"Detected unknown pattern '{pattern}' across {info['count']} order rows (Aggregated financial impact: ₹{round(info['total_amount'], 2)}).",
             "confidence": 0.85,
             "status": "PENDING",
             "requires_human": True,
@@ -76,45 +76,55 @@ def evaluate_batch_exceptions(
     active_rules: List[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Evaluates complete batch for all exception types:
-    1. Unknown deduction patterns
-    2. Missing payment settlement
-    3. Missing order ID in sales sheet
+    Evaluates complete batch for high-level governance exception cards.
+    NEVER SURFACES 1,900 INDIVIDUAL ROWS.
+    Aggregates missing payments, missing orders, and unknown patterns into 3-5 concise governance items.
     """
-    log_stage("EXCEPTIONS", f"Evaluating batch exceptions across {len(orders)} orders and reconciliation results")
+    log_stage("EXCEPTIONS", f"Evaluating batch exceptions across {len(orders)} orders")
     all_exceptions: List[Dict[str, Any]] = []
 
-    # 1. Unknown deduction patterns
+    # 1. Unknown deduction patterns (Grouped by unique pattern text)
     unknown_patterns = detect_unknown_patterns(orders, active_rules)
     all_exceptions.extend(unknown_patterns)
 
-    # 2. Missing Payment exceptions
-    for item in reconciliation_results.get("missingInPayment", []):
+    # 2. Aggregated Missing Payment Exception Card (1 Summary Card for ALL missing payments)
+    missing_payments = reconciliation_results.get("missingInPayment", [])
+    if missing_payments:
+        cnt = len(missing_payments)
+        sample_oids = [m["orderId"] for m in missing_payments[:5]]
+        sample_str = ", ".join(sample_oids)
         all_exceptions.append({
-            "record_id": f"missing-pmt-{item['orderId']}",
-            "order_id": item["orderId"],
-            "exception_type": "MISSING_PAYMENT",
-            "raw_status": item.get("orderSheetStatus", ""),
+            "record_id": "summary-missing-payments",
+            "order_id": f"{cnt} Orders Missing Payment (Samples: {sample_str})",
+            "exception_type": "MISSING_PAYMENT_SUMMARY",
+            "raw_status": "Missing Payment Settlement",
             "amount": 0.0,
-            "description": f"Order {item['orderId']} was dispatched ({item.get('orderSheetStatus')}) but no payment settlement record was found.",
+            "description": f"{cnt} orders in the Order Sheet have no corresponding payment settlement records in uploaded payment sheets.",
             "confidence": 0.95,
             "status": "PENDING",
-            "requires_human": True
+            "requires_human": True,
+            "occurrences": cnt
         })
 
-    # 3. Missing Order exceptions
-    for item in reconciliation_results.get("missingInOrder", []):
+    # 3. Aggregated Missing Order Exception Card (1 Summary Card for extra payment settlements)
+    missing_orders = reconciliation_results.get("missingInOrder", [])
+    if missing_orders:
+        cnt = len(missing_orders)
+        tot_settlement = sum(float(m.get("totalPayment", 0)) for m in missing_orders)
+        sample_oids = [m["orderId"] for m in missing_orders[:5]]
+        sample_str = ", ".join(sample_oids)
         all_exceptions.append({
-            "record_id": f"missing-ord-{item['orderId']}",
-            "order_id": item["orderId"],
-            "exception_type": "MISSING_ORDER",
-            "raw_status": item.get("paymentStatuses", ""),
-            "amount": item.get("totalPayment", 0.0),
-            "description": f"Payment settled for Order {item['orderId']} (₹{item.get('totalPayment')}), but order ID was missing from order sheet.",
+            "record_id": "summary-missing-orders",
+            "order_id": f"{cnt} Historical Settlements (Samples: {sample_str})",
+            "exception_type": "HISTORICAL_PAYMENTS_SUMMARY",
+            "raw_status": "Historical Payment Settlement",
+            "amount": round(tot_settlement, 4),
+            "description": f"{cnt} payment settlement entries (Total ₹{round(tot_settlement, 2)}) reference Order IDs not present in current month Order Sheet (likely previous month settlements).",
             "confidence": 0.90,
             "status": "PENDING",
-            "requires_human": True
+            "requires_human": False,
+            "occurrences": cnt
         })
 
-    log_stage("EXCEPTIONS", f"Batch exception evaluation finished. Total exceptions surfaced: {len(all_exceptions)}")
+    log_stage("EXCEPTIONS", f"Governance evaluation finished. Surface {len(all_exceptions)} concise high-level cards (no row clutter)")
     return all_exceptions
