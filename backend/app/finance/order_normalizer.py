@@ -1,14 +1,15 @@
 import re
 import json
 import pandas as pd
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from app.schemas.canonical import CanonicalOrder, ColumnMappingResult, ColumnMapping
 from app.finance.normalizer import normalize_status, clean_quantity
+from app.finance.payment_normalizer import auto_map_payment_columns
 from app.core.logging import log_stage
 
 CANONICAL_ORDER_KEYWORDS = {
-    "order_id": ["sub order no", "order id", "order number", "sub order number", "order_id", "order_no", "order reference"],
-    "sku": ["supplier sku", "sku", "seller sku", "product sku", "sku_id", "item sku"],
+    "order_id": ["sub order number", "sub order no", "order id", "order number", "order_id", "order_no", "order reference"],
+    "sku": ["supplier sku", "seller sku", "sku", "product sku", "sku_id", "item sku"],
     "product_name": ["product name", "title", "product", "item name", "description"],
     "quantity": ["quantity", "qty", "units", "item quantity"],
     "status": ["live order status", "reason for credit entry", "status", "shipment status", "order status", "current status"],
@@ -16,18 +17,9 @@ CANONICAL_ORDER_KEYWORDS = {
     "order_date": ["order date", "order timestamp", "created date", "order_date"]
 }
 
-CANONICAL_PAYMENT_KEYWORDS = {
-    "order_id": ["sub order no", "order id", "order number", "sub order number", "order_id"],
-    "amount": ["final settlement amount", "payment amount", "settlement amount", "net amount", "amount", "credit amount"],
-    "status": ["live order status", "reason for credit entry", "payment status", "status"],
-    "sku": ["supplier sku", "sku", "seller sku", "product sku"],
-    "quantity": ["quantity", "qty", "units"],
-    "payment_date": ["payment date", "transaction date", "settlement date", "date"]
-}
-
 def auto_map_order_columns(headers: List[str]) -> Dict[str, str]:
     """
-    Deterministically maps source headers to canonical order fields based on semantic keyword matching.
+    Deterministically maps source headers to canonical order fields based on exact & fuzzy keyword matching.
     Amount is intentionally excluded from Master Order Sheets.
     """
     mapping = {}
@@ -35,17 +27,44 @@ def auto_map_order_columns(headers: List[str]) -> Dict[str, str]:
 
     for canonical_field, keywords in CANONICAL_ORDER_KEYWORDS.items():
         matched_col = ""
+        # 1. Exact equality check
         for kw in keywords:
-            for idx, h_lower in enumerate(lower_headers):
-                if kw in h_lower:
-                    matched_col = headers[idx]
-                    break
-            if matched_col:
+            if kw in lower_headers:
+                matched_col = headers[lower_headers.index(kw)]
                 break
+        # 2. Substring match fallback
+        if not matched_col:
+            for kw in keywords:
+                for idx, h_lower in enumerate(lower_headers):
+                    if kw in h_lower:
+                        matched_col = headers[idx]
+                        break
+                if matched_col:
+                    break
         if matched_col:
             mapping[canonical_field] = matched_col
 
     return mapping
+
+
+def parse_json_from_llm_text(text: str) -> Optional[Dict[str, Any]]:
+    """Robustly extracts and parses JSON objects from LLM output, handling markdown codeblocks and extra text."""
+    if not text:
+        return None
+
+    clean_text = re.sub(r'```(?:json)?', '', text).strip()
+    
+    start_idx = clean_text.find('{')
+    end_idx = clean_text.rfind('}')
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        json_str = clean_text[start_idx:end_idx + 1]
+        json_str = re.sub(r',\s*([\}\]])', r'\1', json_str)
+        try:
+            return json.loads(json_str)
+        except Exception:
+            pass
+
+    return None
 
 
 def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet_role: str = "MASTER ORDER SHEET") -> Dict[str, Any]:
@@ -53,6 +72,7 @@ def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet
     Uses local LLM (Ollama qwen2.5:3b) to semantically map raw column headers to canonical fields.
     For Master Order Sheets: Maps order_id, sku, quantity, status, order_date (Amount excluded).
     For Payment Settlement Sheets: Maps order_id, amount, status, sku, quantity, payment_date.
+    Fallback uses platform-specific auto_map (payment_normalizer for payment sheets).
     """
     log_stage("AGENT", f"Invoking ColumnMappingAgent (Local LLM) for {sheet_role} ({len(headers)} headers)")
     
@@ -83,20 +103,24 @@ def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet
         res = llm.invoke(prompt_input)
         res_text = getattr(res, "content", str(res))
         
-        json_match = re.search(r'\{.*\}', res_text, re.DOTALL)
-        if json_match:
-            parsed = json.loads(json_match.group(0))
-            if "mappings" in parsed and isinstance(parsed["mappings"], dict):
-                # Filter out amount for Master Order Sheets if erroneously hallucinated
-                if not is_payment and "amount" in parsed["mappings"]:
-                    del parsed["mappings"]["amount"]
-                log_stage("AGENT", f"ColumnMappingAgent (LLM) mapped {len(parsed['mappings'])} canonical fields successfully")
-                return parsed
+        parsed = parse_json_from_llm_text(res_text)
+        if parsed and "mappings" in parsed and isinstance(parsed["mappings"], dict):
+            if not is_payment and "amount" in parsed["mappings"]:
+                del parsed["mappings"]["amount"]
+            log_stage("AGENT", f"ColumnMappingAgent (LLM) mapped {len(parsed['mappings'])} canonical fields successfully")
+            return parsed
+
     except Exception as e:
         log_stage("AGENT", f"LLM mapping fallback to deterministic: {str(e)}", level="warn")
 
-    # Fallback to deterministic dictionary mapping
-    deterministic = auto_map_order_columns(headers)
+    # Smart Fallback
+    if is_payment:
+        deterministic = auto_map_payment_columns(headers)
+        if "settlement_amount" in deterministic and "amount" not in deterministic:
+            deterministic["amount"] = deterministic.pop("settlement_amount")
+    else:
+        deterministic = auto_map_order_columns(headers)
+
     mappings = {}
     for c_field, src_col in deterministic.items():
         mappings[c_field] = {
@@ -114,7 +138,6 @@ def validate_order_mapping(df_data: pd.DataFrame, mapping: Dict[str, str]) -> Tu
     log_stage("VALIDATOR", "Starting order mapping validation")
     errors = []
 
-    # Validate order_id
     order_id_col = mapping.get("order_id")
     if not order_id_col or order_id_col not in df_data.columns:
         errors.append("Missing required 'order_id' mapping")
@@ -126,7 +149,6 @@ def validate_order_mapping(df_data: pd.DataFrame, mapping: Dict[str, str]) -> Tu
             if uniq_ratio < 0.30:
                 errors.append(f"Mapped order_id column '{order_id_col}' has low uniqueness ({round(uniq_ratio*100, 1)}%)")
 
-    # Validate quantity if mapped
     qty_col = mapping.get("quantity")
     if qty_col and qty_col in df_data.columns:
         valid_q = 0

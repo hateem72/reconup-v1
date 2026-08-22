@@ -6,13 +6,12 @@ from app.finance.normalizer import parse_numeric_amount
 from app.core.logging import log_stage
 
 CANONICAL_PAYMENT_KEYWORDS = {
-    "order_id": ["sub order no", "order id", "order number", "sub order number", "order_id", "order_no"],
+    "order_id": ["sub order no", "sub order number", "order id", "order number", "order_id", "order_no"],
     "settlement_amount": ["final settlement amount", "settlement amount", "net amount", "total payout", "amount", "payout", "settled amount"],
-    "status": ["reason for credit entry", "transaction status", "payment status", "status", "credit type"],
-    "sku": ["supplier sku", "sku", "seller sku", "product sku"],
-    "payment_date": ["payment date", "settlement date", "credit date", "payout date"],
-    "fee_amount": ["commission", "platform fee", "shipping fee", "fee"],
-    "deduction_amount": ["penalty", "deduction", "return charge", "loss"]
+    "status": ["live order status", "reason for credit entry", "transaction status", "payment status", "status", "credit type"],
+    "sku": ["supplier sku", "seller sku", "sku", "product sku"],
+    "payment_date": ["payment date", "order date", "settlement date", "credit date", "payout date"],
+    "quantity": ["quantity", "qty", "units"]
 }
 
 def auto_map_payment_columns(headers: List[str]) -> Dict[str, str]:
@@ -24,10 +23,12 @@ def auto_map_payment_columns(headers: List[str]) -> Dict[str, str]:
         matched_col = ""
         for kw in keywords:
             for idx, h_lower in enumerate(lower_headers):
-                if kw in h_lower:
+                if h_lower == kw:
                     matched_col = headers[idx]
                     break
-            if matched_col:
+                elif kw in h_lower and not matched_col:
+                    matched_col = headers[idx]
+            if matched_col and (kw in lower_headers and headers[lower_headers.index(kw)] == matched_col if kw in lower_headers else True):
                 break
         if matched_col:
             mapping[canonical_field] = matched_col
@@ -44,7 +45,7 @@ def validate_payment_mapping(df_data: pd.DataFrame, mapping: Dict[str, str]) -> 
     if not order_id_col or order_id_col not in df_data.columns:
         errors.append("Missing required payment 'order_id' mapping")
 
-    amt_col = mapping.get("settlement_amount")
+    amt_col = mapping.get("settlement_amount") or mapping.get("amount")
     if not amt_col or amt_col not in df_data.columns:
         errors.append("Missing required 'settlement_amount' mapping")
 
@@ -68,7 +69,7 @@ def normalize_canonical_payments(
     canonical_payments: List[CanonicalPayment] = []
 
     order_id_col = mapping.get("order_id", df_data.columns[0])
-    amt_col = mapping.get("settlement_amount")
+    amt_col = mapping.get("settlement_amount") or mapping.get("amount")
     status_col = mapping.get("status")
     sku_col = mapping.get("sku")
     date_col = mapping.get("payment_date")
@@ -90,7 +91,6 @@ def normalize_canonical_payments(
         fee_val = parse_numeric_amount(row[fee_col]) if fee_col and pd.notna(row[fee_col]) else 0.0
         deduction_val = parse_numeric_amount(row[deduction_col]) if deduction_col and pd.notna(row[deduction_col]) else 0.0
 
-        # Classify Transaction Type
         trx_type = "SETTLEMENT"
         if amount < 0 or deduction_val > 0 or "fee" in raw_status.lower() or "penalty" in raw_status.lower():
             trx_type = "DEDUCTION"
@@ -98,7 +98,7 @@ def normalize_canonical_payments(
             trx_type = "FEE"
 
         c_payment = CanonicalPayment(
-            transaction_id=f"trx_{source_sheet}_{idx+1}",
+            transaction_id=str(row.get("Transaction ID", row.get("transaction_id", f"pmt-{idx+1}-{oid}"))).strip(),
             order_id=oid,
             sku=sku_val,
             status=raw_status,
