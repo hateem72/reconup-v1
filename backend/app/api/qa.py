@@ -9,13 +9,14 @@ from app.agents.core.llm_factory import get_llm
 router = APIRouter()
 
 class QARequest(BaseModel):
-    question: str
+    query: Optional[str] = None
+    question: Optional[str] = None
     batch_id: Optional[str] = None
 
 @router.post("/qa")
 def ask_finance_question(req: QARequest, db: Session = Depends(get_db)):
     repo = FinanceRepository(db)
-    q = req.question.strip()
+    q = (req.query or req.question or "").strip()
     
     # 1. Fetch structured database facts
     context_facts = {}
@@ -59,6 +60,8 @@ Answer:
 
     return {
         "question": q,
+        "query": q,
         "answer": answer_text,
+        "response": answer_text,
         "retrieved_facts": context_facts
     }

@@ -1,7 +1,7 @@
 import os
 from langchain_community.llms import Ollama
 
-def get_llm():
+def get_llm(temperature: float = 0.0):
     """
     Returns a configured local Ollama LLM instance (qwen2.5:3b).
     Falls back gracefully if Ollama service is offline.
@@ -12,5 +12,5 @@ def get_llm():
     return Ollama(
         model=model_name,
         base_url=base_url,
-        temperature=0.0
+        temperature=temperature
     )
