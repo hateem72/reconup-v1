@@ -102,106 +102,20 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 def sheet_filtering_node(state: FinanceState) -> Dict[str, Any]:
     """
-    NEW NODE: SheetRelevanceAgent (Local LLM Ollama qwen2.5:3b) evaluates every discovered sub-tab.
-    Determines whether a sub-tab is REQUIRED (contains order/payment transaction records) or NOT_REQUIRED
+    NODE 1.5: Delegates to dedicated SheetRelevanceAgent to evaluate every discovered sub-tab.
+    Determines whether a sub-tab is REQUIRED (essential transaction dataset) or NOT_REQUIRED
     (e.g., Ads Cost summaries, Referral notes, Disclaimer text, empty sheets).
     Instantly drops non-essential sub-tabs to optimize Node 2, Node 3, and Node 4 performance!
     """
-    start_time = time.time()
-    batch_id = state.get("batch_id", "batch_demo")
+    from app.agents.sheet_relevance_agent import SheetRelevanceAgent
     raw_datasets = state.get("raw_datasets", [])
-
-    print("\n" + "="*80)
-    print(f"  [NEW NODE: AI SHEET RELEVANCE & SUB-TAB FILTERING] STARTED FOR BATCH: {batch_id}")
-    print("="*80)
-
-    log_stage("NODE_RELEVANCE", f"Starting SheetRelevanceAgent evaluation for {len(raw_datasets)} sub-tabs")
-
-    retained_datasets = []
-    dropped_datasets = []
-
-    NON_ESSENTIAL_KEYWORDS = ["ads cost", "referral", "disclaimer", "compensation and recovery", "reward id"]
-
-    for idx, ds in enumerate(raw_datasets):
-        fname = ds.get("filename", f"file_{idx+1}")
-        role = ds.get("role", "MASTER ORDER SHEET")
-        rows = ds.get("data", [])
-        
-        headers = [str(k) for k in rows[0].keys() if k != "id"] if rows and isinstance(rows[0], dict) else []
-        row_cnt = len(rows)
-
-        # Deterministic checks for Master Orders, Order Payment Settlements, vs Non-Essential Sub-Tabs
-        is_master_order = role == "MASTER ORDER SHEET" or ("order" in fname.lower() and "payment" not in fname.lower())
-        is_order_payment_settlement = "order payments" in fname.lower() or ("payment" in role.upper() and row_cnt > 5)
-        has_transaction_headers = any(h_kw in str(headers).lower() for h_kw in ["sub order no", "final settlement amount", "live order status", "order date", "supplier sku", "amount"])
-
-        is_empty_or_disclaimer = row_cnt == 0 or "disclaimer" in fname.lower()
-        is_small_summary_tab = (row_cnt <= 5 and len(headers) < 4 and any(k in fname.lower() for k in ["ads cost", "referral", "reward id"]))
-
-        verdict = "REQUIRED"
-        rationale = "Transaction settlement or manifest dataset"
-
-        if is_master_order or is_order_payment_settlement or has_transaction_headers:
-            verdict = "REQUIRED"
-            rationale = "Master Order Manifest or Payment Settlement Sheet containing order transactions"
-        elif is_empty_or_disclaimer or is_small_summary_tab:
-            verdict = "NOT_REQUIRED"
-            rationale = f"Non-transactional summary/disclaimer tab ({row_cnt} rows, {len(headers)} cols)"
-        else:
-            # Consult Local LLM for ambiguous sub-tabs
-            try:
-                from app.agents.llm_factory import get_llm
-                from app.agents.prompts import SHEET_RELEVANCE_PROMPT
-                
-                llm = get_llm()
-                prompt_input = (
-                    f"{SHEET_RELEVANCE_PROMPT}\n\n"
-                    f"Sub-Tab Name: {fname}\n"
-                    f"Designated Role: {role}\n"
-                    f"Row Count: {row_cnt}\n"
-                    f"Header Columns: {headers[:10]}\n\n"
-                    f"Respond with valid JSON mapping dictionary:"
-                )
-                res = llm.invoke(prompt_input)
-                res_text = getattr(res, "content", str(res))
-                parsed = parse_json_from_llm_text(res_text)
-                if parsed and "verdict" in parsed:
-                    verdict = parsed.get("verdict", "REQUIRED").upper()
-                    rationale = parsed.get("rationale", rationale)
-            except Exception:
-                verdict = "REQUIRED"
-
-        if verdict == "REQUIRED":
-            retained_datasets.append(ds)
-            print(f"  • \"{fname}\" ({len(headers)} cols, {row_cnt} rows)")
-            print(f"    └─ AI Verdict: [REQUIRED] ({rationale}) ──▶ RETAINED ✓")
-        else:
-            dropped_datasets.append(ds)
-            print(f"  • \"{fname}\" ({len(headers)} cols, {row_cnt} rows)")
-            print(f"    └─ AI Verdict: [NOT_REQUIRED] ({rationale}) ──▶ DROPPED ✂️")
-
-    print("\n" + "="*80)
-    print(f"  [AI SHEET RELEVANCE SUMMARY]:")
-    print(f"  • Total Sub-Tabs Inspected: {len(raw_datasets)}")
-    print(f"  • Retained Essential Transaction Sheets: {len(retained_datasets)}")
-    print(f"  • Dropped Non-Essential Summary/Disclaimer Tabs: {len(dropped_datasets)}")
-    print(f"  • Performance Optimization: {round((len(dropped_datasets)/max(len(raw_datasets), 1))*100, 1)}% noise reduction for Node 2!")
-    print("="*80 + "\n")
-
-    log_agent_call(
-        agent_name="SheetRelevanceAgent",
-        task="Filter non-essential summary/disclaimer sub-tabs",
-        input_summary=f"{len(raw_datasets)} discovered sub-tabs",
-        output_summary=f"Retained {len(retained_datasets)} sheets, dropped {len(dropped_datasets)} summary tabs",
-        confidence=0.99,
-        duration_sec=time.time() - start_time
-    )
-
-    log_stage("NODE_RELEVANCE", f"Relevance Agent completed. Retained {len(retained_datasets)} essential transaction sheets.")
-
+    
+    agent = SheetRelevanceAgent()
+    result = agent.evaluate_sheet_relevance(raw_datasets)
+    
     return {
-        "raw_datasets": retained_datasets,
-        "dropped_datasets": dropped_datasets,
+        "raw_datasets": result.get("retained_datasets", []),
+        "dropped_datasets": result.get("dropped_datasets", []),
         "status": "NODE_RELEVANCE_COMPLETED"
     }
 
