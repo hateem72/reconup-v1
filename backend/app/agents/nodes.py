@@ -6,6 +6,7 @@ from app.agents.state import FinanceState
 from app.finance.profiler import list_sheets, profile_sheet
 from app.finance.normalizer import normalize_status
 from app.finance.validator import validate_sales_data
+from app.finance.order_normalizer import llm_map_columns, validate_order_mapping
 from app.finance.profit_calculator import group_by_sku, calculate_overall_profit
 from app.finance.reconciliation import process_reconciliation
 from app.finance.exception_detector import evaluate_batch_exceptions, detect_unknown_patterns
@@ -52,7 +53,6 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
 
         if rows and isinstance(rows[0], dict):
             df_raw = pd.DataFrame(rows)
-            # Remove internal legacy keys from headers list
             exact_headers = [str(k) for k in rows[0].keys() if k != "id"]
             
             sheet_profile = profile_sheet(df_raw, sheet_name=fname, sheet_idx=idx)
@@ -81,23 +81,100 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
                 print(f"      - Column [{cp.column_index+1}] \"{cp.column_name}\": dtype={cp.dtype}, nulls={cp.null_percentage}%, uniqueness={round(cp.uniqueness_ratio*100, 1)}% [{type_str}] (Samples: {samples_preview})")
 
     print("\n" + "="*80)
-    print(f"  [NODE 1 COMPLETE] Discovered exact headers for {total_sheets_found} sheets across {len(files_info)} files.")
+    print(f"  [NODE 1 COMPLETE] Profiled {total_sheets_found} sheets across {len(files_info)} files.")
     print("="*80 + "\n")
 
-    log_stage("NODE 1", f"Node 1 complete. Profiled {total_sheets_found} sheets with exact header names. Ready for Node 2 validation.")
+    log_stage("NODE 1", f"Node 1 complete. Profiled {total_sheets_found} sheets with exact header names.")
 
     return {
         "sheet_profiles": profiles,
+        "raw_datasets": raw_datasets,
         "status": "NODE_1_INGEST_COMPLETE"
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# NODE 2: HEADER DETECTION & LOCAL LLM COLUMN MAPPING VALIDATION NODE
+# ─────────────────────────────────────────────────────────────────────────────
 def validation_node(state: FinanceState) -> Dict[str, Any]:
-    """NODE 2: Validates column mappings and structural fields of records."""
-    log_stage("NODE 2", "Executing Node 2: Header & Mapping Validation")
-    records = state.get("parsed_orders", [])
-    val_res = validate_sales_data(records)
-    return {"validation_errors": val_res.get("missingData", []), "status": "NODE_2_VALIDATED"}
+    """
+    NODE 2: ColumnMappingAgent (Local LLM Ollama qwen2.5:3b) semantically maps raw column
+    headers to canonical domain fields with confidence & rationale, followed by Python structural validation.
+    """
+    start_time = time.time()
+    batch_id = state.get("batch_id", "batch_demo")
+    raw_datasets = state.get("raw_datasets", [])
+
+    print("\n" + "="*80)
+    print(f"  [NODE 2: LLM COLUMN MAPPING & VALIDATION] EXECUTION STARTED FOR BATCH: {batch_id}")
+    print("="*80)
+
+    log_stage("NODE 2", f"Starting Node 2 LLM Column Mapping for {len(raw_datasets)} datasets")
+    all_mappings = {}
+    validation_results = []
+
+    for idx, ds in enumerate(raw_datasets):
+        fname = ds.get("filename", f"file_{idx+1}")
+        role = ds.get("role", "MASTER ORDER SHEET")
+        rows = ds.get("data", [])
+        
+        if not rows or not isinstance(rows[0], dict):
+            continue
+
+        headers = [str(k) for k in rows[0].keys() if k != "id"]
+        
+        print(f"\n--- [NODE 2 AI AGENT MAPPING DATASET #{idx+1}]: {fname} [{role}] ---")
+        log_stage("NODE 2", f"AI Agent ColumnMappingAgent analyzing {len(headers)} headers for '{fname}'")
+
+        # Invoke Local LLM Column Mapping Agent (qwen2.5:3b)
+        mapping_result = llm_map_columns(headers, rows, sheet_role=role)
+        mappings = mapping_result.get("mappings", {})
+        all_mappings[fname] = mappings
+
+        # Convert mappings to simple dict for validation
+        simple_map = {c_field: info.get("source_column") for c_field, info in mappings.items() if isinstance(info, dict)}
+
+        print(f"  • AI Agent Mapping Matrix ({len(simple_map)} canonical fields mapped):")
+        for c_field, info in mappings.items():
+            if isinstance(info, dict):
+                src_c = info.get("source_column", "N/A")
+                conf = info.get("confidence", 1.0)
+                rat = info.get("rationale", "")
+                print(f"      - Canonical [{c_field}] ──▶ \"{src_c}\" (Confidence: {round(conf, 2)})")
+                if rat:
+                    print(f"        Rationale: {rat}")
+
+        # Execute Python Structural Validation Guardrail
+        df_data = pd.DataFrame(rows)
+        is_valid, errors = validate_order_mapping(df_data, simple_map)
+        val_status = "VALID" if is_valid else "WARNINGS_FOUND"
+        validation_results.append({"filename": fname, "role": role, "is_valid": is_valid, "errors": errors})
+
+        print(f"  • Python Structural Guardrail Check: {val_status}")
+        if errors:
+            for err in errors:
+                print(f"      ⚠️ Warning: {err}")
+
+        log_agent_call(
+            agent_name="ColumnMappingAgent",
+            task=f"Map {role} headers to canonical domain schema",
+            input_summary=f"{len(headers)} raw column headers",
+            output_summary=f"Mapped {len(simple_map)} fields for {fname}",
+            confidence=0.98,
+            duration_sec=time.time() - start_time
+        )
+
+    print("\n" + "="*80)
+    print(f"  [NODE 2 COMPLETE] ColumnMappingAgent (Local LLM) completed mapping validation for {len(raw_datasets)} datasets.")
+    print("="*80 + "\n")
+
+    log_stage("NODE 2", "Node 2 execution complete. Ready for Node 3 normalization.")
+
+    return {
+        "column_mappings": all_mappings,
+        "validation_results": validation_results,
+        "status": "NODE_2_VALIDATED"
+    }
 
 
 def normalization_node(state: FinanceState) -> Dict[str, Any]:
