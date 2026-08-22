@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database.database import init_db
-from app.api import uploads, reconciliation, exceptions, rules, reports, qa, health, costs
+from app.api import uploads, reconciliation, exceptions, rules, reports, qa, health, costs, reset
 
 app = FastAPI(
     title="Agentic AI Finance Controller",
@@ -32,6 +32,7 @@ app.include_router(rules.router, prefix="/api", tags=["Rule Registry"])
 app.include_router(costs.router, prefix="/api", tags=["SKU Unit Costs"])
 app.include_router(reports.router, prefix="/api", tags=["Reports"])
 app.include_router(qa.router, prefix="/api", tags=["Finance Q&A"])
+app.include_router(reset.router, prefix="/api", tags=["System Hard Reset"])
 
 if __name__ == "__main__":
     import uvicorn

@@ -11,7 +11,7 @@ import ExceptionQueue from './components/ExceptionQueue';
 import RuleRegistryModal from './components/RuleRegistryModal';
 import CostPriceModal from './components/CostPriceModal';
 import FinanceQAChat from './components/FinanceQAChat';
-import { Sparkles, Activity, DollarSign, AlertCircle, ArrowRight, CheckCircle2, ShieldCheck, FileSearch } from 'lucide-react';
+import { Sparkles, Activity, DollarSign, AlertCircle, ArrowRight, CheckCircle2, ShieldCheck, FileSearch, RotateCcw } from 'lucide-react';
 
 export default function App() {
   const [activeBatchId, setActiveBatchId] = useState(null);
@@ -23,6 +23,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [isCostModalOpen, setIsCostModalOpen] = useState(false);
+  const [resetNotification, setResetNotification] = useState('');
   
   // Pipeline Step State (1: Upload, 2: Profile, 3: Reconciliation Governance, 4: P&L, 5: Q&A)
   const [pipelineStep, setPipelineStep] = useState(1);
@@ -71,6 +72,29 @@ export default function App() {
     setActiveBatchId(data.batch_id);
     fetchBatchData(data.batch_id);
     setPipelineStep(3); // Advance to Step 3: Reconciliation Governance FIRST
+  };
+
+  const handleHardReset = async () => {
+    setIsProcessing(true);
+    try {
+      const res = await fetch('/api/reset', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setActiveBatchId(null);
+        setBatchMetrics(null);
+        setSummary(null);
+        setSkuBreakdown(null);
+        setReconciliation(null);
+        setExceptions([]);
+        setPipelineStep(1);
+        setResetNotification('System hard reset complete. All batches and caches cleared. Ready to start fresh reconciliation!');
+        setTimeout(() => setResetNotification(''), 4000);
+      }
+    } catch (err) {
+      console.error("Error resetting system:", err);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const runSyntheticDemo = async () => {
@@ -123,11 +147,25 @@ ORD-1010\tCancelled\t200`;
         onOpenRules={() => setIsRuleModalOpen(true)}
         onOpenCosts={() => setIsCostModalOpen(true)}
         onRunDemo={runSyntheticDemo}
+        onHardReset={handleHardReset}
         isProcessing={isProcessing}
         activeBatchId={activeBatchId}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
+        {/* Reset Notification Banner */}
+        {resetNotification && (
+          <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-2">
+              <RotateCcw className="w-5 h-5 text-rose-600 shrink-0" />
+              <span>{resetNotification}</span>
+            </div>
+            <button onClick={() => setResetNotification('')} className="text-rose-600 hover:underline">
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Pipeline Stepper Bar */}
         <PipelineStepper
           currentStep={pipelineStep}
