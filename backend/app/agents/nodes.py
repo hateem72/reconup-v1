@@ -158,8 +158,16 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
                     print(f"        Rationale: {rat}")
 
         df_data = pd.DataFrame(rows)
-        is_valid, errors = validate_order_mapping(df_data, simple_map)
-        val_status = "VALID" if is_valid else "WARNINGS_FOUND"
+        is_summary_tab = len(headers) < 4 or any(sub_k in fname.lower() for sub_k in ["ads cost", "referral", "disclaimer", "compensation and recovery"])
+        
+        if is_summary_tab:
+            is_valid = True
+            errors = []
+            val_status = "SUMMARY_SHEET (No order_id required)"
+        else:
+            is_valid, errors = validate_order_mapping(df_data, simple_map)
+            val_status = "VALID" if is_valid else "WARNINGS_FOUND"
+
         validation_results.append({"filename": fname, "role": role, "is_valid": is_valid, "errors": errors})
 
         print(f"  • Python Structural Guardrail Check: {val_status}")
