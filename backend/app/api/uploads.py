@@ -1,6 +1,6 @@
 import uuid
 import time
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.database import get_db
@@ -16,6 +16,36 @@ from app.core.logging import log_stage
 
 router = APIRouter()
 
+def classify_and_separate_datasets(parsed_datasets: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Classifies parsed datasets into Order datasets vs Payment Settlement datasets
+    based on filename and column header keywords.
+    """
+    orders_list = []
+    payments_list = []
+
+    for item in parsed_datasets:
+        fname = item.get("filename", "").lower()
+        rows = item.get("data", [])
+        if not rows or not isinstance(rows[0], dict):
+            continue
+
+        headers_lower = [str(k).lower() for k in rows[0].keys()]
+        
+        # Check payment indicators
+        is_payment_file = "payment" in fname or "settlement" in fname or "payout" in fname
+        is_payment_header = any("final settlement amount" in h or "reason for credit entry" in h or "payment status" in h or "settlement" in h for h in headers_lower)
+
+        if is_payment_file or is_payment_header:
+            log_stage("PROFILER", f"Classified dataset '{item.get('filename')}' as PAYMENT SETTLEMENT ({len(rows)} rows)")
+            payments_list.extend(rows)
+        else:
+            log_stage("PROFILER", f"Classified dataset '{item.get('filename')}' as MASTER ORDER SHEET ({len(rows)} rows)")
+            orders_list.extend(rows)
+
+    return orders_list, payments_list
+
+
 @router.post("/batches")
 async def create_and_process_batch(
     files: Optional[List[UploadFile]] = File(None),
@@ -24,15 +54,15 @@ async def create_and_process_batch(
     db: Session = Depends(get_db)
 ):
     """
-    Ingests order and payment sheets, profiles columns, validates mappings,
-    executes multi-source RECONCILIATION FIRST, and surfaces reconciliation exceptions
-    for human review before performing profit calculations.
+    Creates a new batch supporting multiple file uploads (order sheets + settlement payment sheets),
+    profiles spreadsheet columns, converts into CanonicalOrder and CanonicalPayment models,
+    executes multi-event reconciliation, profit calculations, and exception detection.
     """
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
     repo = FinanceRepository(db)
 
-    # Collect upload files
+    # Collect all uploaded files
     upload_list: List[UploadFile] = []
     if files:
         upload_list.extend(files)
@@ -50,89 +80,72 @@ async def create_and_process_batch(
     batch = repo.create_batch(batch_id=batch_id, source_filename=filenames_summary, total_records=0)
     repo.log_audit_event(batch_id, "STAGE_START", "INGEST", f"Files uploaded: {filenames_summary}")
 
-    all_parsed_orders = []
-    all_parsed_payments = []
-    all_canonical_orders = []
-    all_canonical_payments = []
+    parsed_datasets: List[Dict[str, Any]] = []
 
-    # 1. DISCOVER & PARSE SHEETS
     if upload_list:
         for up_file in upload_list:
             fname = up_file.filename or "file.csv"
             content = await up_file.read()
-            log_stage("PROFILER", f"Inspecting and parsing uploaded file: '{fname}'")
+            log_stage("PROFILER", f"Inspecting uploaded file: '{fname}'")
 
             if fname.endswith(".zip"):
-                res = parse_zip_file(content)
-                if res["success"]:
-                    all_parsed_orders.extend(res["data"])
+                zip_res = parse_zip_file(content)
+                if zip_res["success"]:
+                    for f_entry in zip_res.get("files", []):
+                        parsed_datasets.append({
+                            "filename": f_entry["filename"],
+                            "data": f_entry["data"]
+                        })
             elif fname.endswith((".xlsx", ".xls")):
-                res = parse_excel_bytes(content)
+                res = parse_excel_bytes(content, fname)
                 if res["success"]:
-                    parsed_rows = res["data"]
-                    if parsed_rows and isinstance(parsed_rows[0], dict):
-                        headers_lower = [str(k).lower() for k in parsed_rows[0].keys()]
-                        is_payment = any("settlement" in h or "payment" in h or "credit entry" in h for h in headers_lower)
-                        if is_payment:
-                            log_stage("PROFILER", f"Identified '{fname}' as PAYMENT SETTLEMENT sheet ({len(parsed_rows)} rows)")
-                            all_parsed_payments.extend(parsed_rows)
-                            p_map = auto_map_payment_columns(list(parsed_rows[0].keys()))
-                            c_pmts = normalize_canonical_payments(__import__('pandas').DataFrame(parsed_rows), p_map, fname, "Sheet1", 2)
-                            all_canonical_payments.extend(c_pmts)
-                        else:
-                            log_stage("PROFILER", f"Identified '{fname}' as ORDER sheet ({len(parsed_rows)} rows)")
-                            all_parsed_orders.extend(parsed_rows)
-                            o_map = auto_map_order_columns(list(parsed_rows[0].keys()))
-                            c_ords = normalize_canonical_orders(__import__('pandas').DataFrame(parsed_rows), o_map, fname, "Sheet1", 2)
-                            all_canonical_orders.extend(c_ords)
+                    parsed_datasets.append({
+                        "filename": fname,
+                        "data": res["data"]
+                    })
             else:
                 raw_text = content.decode("utf-8", errors="ignore")
                 res = parse_csv_data(raw_text)
                 if res["success"]:
-                    parsed_rows = res["data"]
-                    if parsed_rows and isinstance(parsed_rows[0], dict):
-                        headers_lower = [str(k).lower() for k in parsed_rows[0].keys()]
-                        is_payment = any("settlement" in h or "payment" in h or "credit" in h for h in headers_lower)
-                        if is_payment:
-                            log_stage("PROFILER", f"Identified '{fname}' as PAYMENT SETTLEMENT CSV ({len(parsed_rows)} rows)")
-                            all_parsed_payments.extend(parsed_rows)
-                            p_map = auto_map_payment_columns(list(parsed_rows[0].keys()))
-                            c_pmts = normalize_canonical_payments(__import__('pandas').DataFrame(parsed_rows), p_map, fname, "CSV", 2)
-                            all_canonical_payments.extend(c_pmts)
-                        else:
-                            log_stage("PROFILER", f"Identified '{fname}' as ORDER CSV ({len(parsed_rows)} rows)")
-                            all_parsed_orders.extend(parsed_rows)
-                            o_map = auto_map_order_columns(list(parsed_rows[0].keys()))
-                            c_ords = normalize_canonical_orders(__import__('pandas').DataFrame(parsed_rows), o_map, fname, "CSV", 2)
-                            all_canonical_orders.extend(c_ords)
-
+                    parsed_datasets.append({
+                        "filename": fname,
+                        "data": res["data"]
+                    })
     elif raw_csv:
         res = parse_csv_data(raw_csv)
-        if not res["success"]:
-            repo.update_batch_status(batch_id, "FAILED")
-            repo.log_audit_event(batch_id, "ERROR", "PARSING", "; ".join(res["errors"]))
-            raise HTTPException(status_code=400, detail="; ".join(res["errors"]))
-        all_parsed_orders = res["data"]
-        if all_parsed_orders and isinstance(all_parsed_orders[0], dict):
-            o_map = auto_map_order_columns(list(all_parsed_orders[0].keys()))
-            all_canonical_orders = normalize_canonical_orders(__import__('pandas').DataFrame(all_parsed_orders), o_map, "pasted.csv", "Clipboard", 2)
+        if res["success"]:
+            parsed_datasets.append({
+                "filename": "pasted_clipboard_data.csv",
+                "data": res["data"]
+            })
     else:
         raise HTTPException(status_code=400, detail="Please upload spreadsheet files or paste CSV text.")
 
-    total_records = len(all_parsed_orders)
-    batch.total_records = total_records
-    repo.update_batch_status(batch_id, "PROFILING", processed_records=total_records)
+    # Classify Datasets into Master Order Sheet vs Payment Settlement Sheets
+    all_parsed_orders, all_parsed_payments = classify_and_separate_datasets(parsed_datasets)
 
-    # Persist Canonical Data Models
-    if all_canonical_orders:
+    log_stage("PROFILER", f"Final Separation: {len(all_parsed_orders)} Master Order rows | {len(all_parsed_payments)} Payment Settlement rows")
+
+    # Canonical Normalization & Database Persistence
+    all_canonical_orders = []
+    all_canonical_payments = []
+
+    if all_parsed_orders and isinstance(all_parsed_orders[0], dict):
+        o_map = auto_map_order_columns(list(all_parsed_orders[0].keys()))
+        all_canonical_orders = normalize_canonical_orders(__import__('pandas').DataFrame(all_parsed_orders), o_map, filenames_summary, "OrderSheet", 2)
         repo.save_canonical_orders(batch_id, all_canonical_orders)
-    if all_canonical_payments:
+
+    if all_parsed_payments and isinstance(all_parsed_payments[0], dict):
+        p_map = auto_map_payment_columns(list(all_parsed_payments[0].keys()))
+        all_canonical_payments = normalize_canonical_payments(__import__('pandas').DataFrame(all_parsed_payments), p_map, filenames_summary, "PaymentSheet", 2)
         repo.save_canonical_payments(batch_id, all_canonical_payments)
 
-    # 2. EXECUTE RECONCILIATION FIRST (MATCHING ORDERS ↔ PAYMENTS)
-    log_stage("RECONCILER", f"Matching {len(all_parsed_orders)} Orders against {len(all_parsed_payments)} Payment settlement rows...")
+    total_records = len(all_parsed_orders)
+    batch.total_records = total_records
     repo.update_batch_status(batch_id, "RECONCILING", processed_records=total_records)
 
+    # 1. RECONCILIATION MATCHING MASTER ORDERS ↔ PAYMENT SETTLEMENTS
+    log_stage("RECONCILER", f"Matching {total_records} Master Orders against {len(all_parsed_payments)} Payment settlement rows...")
     reconciliation_res = process_reconciliation(all_parsed_orders, all_parsed_payments)
     repo.save_reconciliation_results(batch_id, reconciliation_res.get("matched", []))
     
@@ -142,9 +155,9 @@ async def create_and_process_batch(
     missing_ord_cnt = len(reconciliation_res.get("missingInOrder", []))
 
     log_stage("RECONCILER", f"RECONCILIATION RESULT: {matched_cnt}/{total_records} Matched ({match_rate}% Match Rate)")
-    log_stage("RECONCILER", f"DISCREPANCIES DETECTED: {missing_pmt_cnt} Missing Payments | {missing_ord_cnt} Missing Orders")
+    log_stage("RECONCILER", f"DISCREPANCIES DETECTED: {missing_pmt_cnt} Missing Payments | {missing_ord_cnt} Historical Payment Rows")
 
-    # 3. SURFACE RECONCILIATION EXCEPTIONS FOR HUMAN GOVERNANCE FIRST
+    # 2. SURFACE HIGH-LEVEL CONCISE GOVERNANCE EXCEPTIONS (NO 1,900 ROW CARD SPAM)
     rules = [
         {
             "pattern": r.pattern,
@@ -156,28 +169,30 @@ async def create_and_process_batch(
     ]
     exceptions = evaluate_batch_exceptions(all_parsed_orders, reconciliation_res, rules)
 
-    # Check SKU Cost Price Availability (Defer P&L calculation until user configures/approves)
+    # 3. GROUP MISSING SKU COST PRICES INTO 1 SUMMARY GOVERNANCE CARD (NEVER 1,900 CARDS!)
     sku_costs_map = repo.get_sku_costs_map()
     grouped = group_by_sku(all_parsed_orders)
+    missing_cost_skus = [sku_id for sku_id in grouped.keys() if sku_costs_map.get(sku_id, 0.0) <= 0]
 
-    for sku_id in grouped.keys():
-        unit_cost = sku_costs_map.get(sku_id, 0.0)
-        if unit_cost <= 0:
-            exceptions.append({
-                "record_id": f"cost-{sku_id}",
-                "order_id": "N/A",
-                "exception_type": "MISSING_COST_PRICE",
-                "raw_status": f"SKU {sku_id}",
-                "amount": 0.0,
-                "description": f"SKU '{sku_id}' is missing unit cost price. Please configure unit cost.",
-                "confidence": 1.0,
-                "status": "PENDING",
-                "requires_human": True
-            })
+    if missing_cost_skus:
+        cnt_skus = len(missing_cost_skus)
+        sample_skus = ", ".join(missing_cost_skus[:5])
+        exceptions.append({
+            "record_id": "summary-missing-sku-costs",
+            "order_id": f"{cnt_skus} SKUs Missing Unit Costs (Samples: {sample_skus})",
+            "exception_type": "MISSING_COST_PRICE",
+            "raw_status": "SKU Unit Cost Missing",
+            "amount": 0.0,
+            "description": f"{cnt_skus} unique SKUs in this batch require cost price configuration for accurate P&L calculation.",
+            "confidence": 1.0,
+            "status": "PENDING",
+            "requires_human": True,
+            "occurrences": cnt_skus
+        })
 
     repo.save_exceptions(batch_id, exceptions)
 
-    # Defer Profit Calculation: Initial P&L computed using current database costs
+    # Profit Calculation
     profit_res = calculate_overall_profit(grouped, sku_costs_map)
 
     end_time = time.time()
@@ -192,8 +207,8 @@ async def create_and_process_batch(
 
     print("\n" + "="*80)
     print(f"  [RECONCILIATION SUMMARY] Batch {batch_id} Processing Complete!")
-    print(f"  [MATCH RATE] {match_rate}% | Matched: {matched_cnt} | Missing Pmt: {missing_pmt_cnt}")
-    print(f"  [EXCEPTIONS SURFACED] {len(exceptions)} requiring human review/approval")
+    print(f"  [MATCH RATE] {match_rate}% | Matched: {matched_cnt} / {total_records}")
+    print(f"  [EXCEPTIONS SURFACED] {len(exceptions)} concise governance summary cards requiring review")
     print("="*80 + "\n")
 
     return {
