@@ -4,7 +4,7 @@ import { Terminal, Maximize2, Minimize2, Trash2, ChevronRight, RefreshCw } from 
 export default function TerminalConsole({ batchId, isProcessing }) {
   const [logs, setLogs] = useState([]);
   const [isExpanded, setIsExpanded] = useState(false);
-  const consoleEndRef = useRef(null);
+  const terminalContainerRef = useRef(null);
 
   useEffect(() => {
     if (!batchId) return;
@@ -32,7 +32,9 @@ export default function TerminalConsole({ batchId, isProcessing }) {
   }, [batchId]);
 
   useEffect(() => {
-    consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (terminalContainerRef.current) {
+      terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
+    }
   }, [logs]);
 
   return (
@@ -72,6 +74,7 @@ export default function TerminalConsole({ batchId, isProcessing }) {
       </div>
 
       <div
+        ref={terminalContainerRef}
         className={`p-4 space-y-1.5 overflow-y-auto bg-slate-950 text-slate-100 transition-all ${
           isExpanded ? 'h-96' : 'h-40'
         }`}
@@ -104,7 +107,6 @@ export default function TerminalConsole({ batchId, isProcessing }) {
             );
           })
         )}
-        <div ref={consoleEndRef} />
       </div>
     </div>
   );
