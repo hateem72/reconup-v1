@@ -2,6 +2,10 @@
 reference_utils/
 utils/
 
+# Private Interview Cheat-Sheet
+detailedExplanation.md
+docs/detailedExplanation.md
+
 # Python
 __pycache__/
 .pytest_cache/
