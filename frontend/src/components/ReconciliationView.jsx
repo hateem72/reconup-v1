@@ -37,7 +37,7 @@ export default function ReconciliationView({ reconciliation }) {
   };
 
   allRecords.forEach(r => {
-    const rawSt = (r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().strip();
+    const rawSt = (r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().trim();
     if (rawSt.includes('deliver')) {
       statusCounts.Delivered += 1;
     } else if (rawSt.includes('cancel')) {
