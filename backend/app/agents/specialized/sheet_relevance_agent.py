@@ -61,7 +61,7 @@ class SheetRelevanceAgent:
 Sub-Tab Name: {fname}
 Declared Role: {role}
 Row Count: {row_cnt}
-Headers: {headers[:10]}
+Headers: {headers}
 Sample Row: {rows[0] if rows else {}}
 
 Evaluate relevance now:"""
