@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Filter, CheckCircle2, AlertTriangle, Clock, Layers, ArrowUpRight, DollarSign, Code } from 'lucide-react';
+import { Search, Filter, CheckCircle2, XCircle, RotateCcw, PackageX, Truck, PackageCheck, AlertTriangle, Clock, Layers, ArrowUpRight, DollarSign, Code } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
 
 export default function ReconciliationView({ reconciliation }) {
@@ -27,11 +27,52 @@ export default function ReconciliationView({ reconciliation }) {
     ...historicalList.map(m => ({ ...m, statusType: 'HISTORICAL_PAYMENT' }))
   ];
 
+  // Compute Operational Lifecycle Status Counts
+  const statusCounts = {
+    Delivered: 0,
+    Cancelled: 0,
+    Return: 0,
+    RTO: 0,
+    Other: 0
+  };
+
+  allRecords.forEach(r => {
+    const rawSt = (r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().strip();
+    if (rawSt.includes('deliver')) {
+      statusCounts.Delivered += 1;
+    } else if (rawSt.includes('cancel')) {
+      statusCounts.Cancelled += 1;
+    } else if (rawSt.includes('rto') || rawSt.includes('return to origin')) {
+      statusCounts.RTO += 1;
+    } else if (rawSt.includes('return') || rawSt.includes('exchange')) {
+      statusCounts.Return += 1;
+    } else if (rawSt) {
+      statusCounts.Other += 1;
+    }
+  });
+
   const filteredRecords = allRecords.filter(r => {
     const oid = (r.orderId || r.order_id || '').toLowerCase();
     const pDetails = (r.productDetails || r.sku || '').toLowerCase();
+    const rawSt = (r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase();
+
     const matchesSearch = oid.includes(searchTerm.toLowerCase()) || pDetails.includes(searchTerm.toLowerCase());
-    const matchesFilter = statusFilter === 'ALL' || r.statusType === statusFilter;
+
+    let matchesFilter = true;
+    if (statusFilter === 'ALL') {
+      matchesFilter = true;
+    } else if (['MATCHED', 'MISSING_PAYMENT', 'HISTORICAL_PAYMENT'].includes(statusFilter)) {
+      matchesFilter = r.statusType === statusFilter;
+    } else if (statusFilter === 'DELIVERED') {
+      matchesFilter = rawSt.includes('deliver');
+    } else if (statusFilter === 'CANCELLED') {
+      matchesFilter = rawSt.includes('cancel');
+    } else if (statusFilter === 'RETURN') {
+      matchesFilter = rawSt.includes('return') || rawSt.includes('exchange');
+    } else if (statusFilter === 'RTO') {
+      matchesFilter = rawSt.includes('rto') || rawSt.includes('return to origin');
+    }
+
     return matchesSearch && matchesFilter;
   });
 
@@ -40,6 +81,13 @@ export default function ReconciliationView({ reconciliation }) {
 
   return (
     <div className="space-y-6">
+      <RawJsonModal
+        title="Node 5 Order Reconciliation & Net Payout Database"
+        data={reconciliation}
+        isOpen={showJsonModal}
+        onClose={() => setShowJsonModal(false)}
+      />
+
       {/* Executive Funnel & KPI Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
@@ -67,15 +115,101 @@ export default function ReconciliationView({ reconciliation }) {
         </div>
       </div>
 
-      {/* Main Reconciliation Data Table */}
-      <RawJsonModal
-        title="Node 5 Order Reconciliation & Net Payout Database"
-        data={reconciliation}
-        isOpen={showJsonModal}
-        onClose={() => setShowJsonModal(false)}
-      />
+      {/* Operational Order Status Lifecycle Summary Breakdown */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+            <PackageCheck className="w-4 h-4 text-blue-600" />
+            Operational Order Status Breakdown
+          </h4>
+          <span className="text-[11px] text-slate-500 font-mono">
+            Click any status card to filter database records below
+          </span>
+        </div>
 
-      <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-sm">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+          {/* Delivered Card */}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'DELIVERED' ? 'ALL' : 'DELIVERED')}
+            className={`p-3.5 rounded-xl border text-left transition cursor-pointer ${
+              statusFilter === 'DELIVERED'
+                ? 'bg-emerald-100 border-emerald-500 shadow-xs'
+                : 'bg-emerald-50/60 border-emerald-200 hover:bg-emerald-100/70'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-extrabold text-emerald-900">Delivered</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="text-xl font-black text-emerald-700 font-mono">{statusCounts.Delivered}</div>
+            <span className="text-[10px] text-emerald-800 font-semibold block mt-0.5">Successful Fulfillments</span>
+          </button>
+
+          {/* Cancelled Card */}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'CANCELLED' ? 'ALL' : 'CANCELLED')}
+            className={`p-3.5 rounded-xl border text-left transition cursor-pointer ${
+              statusFilter === 'CANCELLED'
+                ? 'bg-rose-100 border-rose-500 shadow-xs'
+                : 'bg-rose-50/60 border-rose-200 hover:bg-rose-100/70'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-extrabold text-rose-900">Cancelled</span>
+              <XCircle className="w-4 h-4 text-rose-600" />
+            </div>
+            <div className="text-xl font-black text-rose-700 font-mono">{statusCounts.Cancelled}</div>
+            <span className="text-[10px] text-rose-800 font-semibold block mt-0.5">Pre-Dispatch Cancelled</span>
+          </button>
+
+          {/* Customer Return Card */}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'RETURN' ? 'ALL' : 'RETURN')}
+            className={`p-3.5 rounded-xl border text-left transition cursor-pointer ${
+              statusFilter === 'RETURN'
+                ? 'bg-amber-100 border-amber-500 shadow-xs'
+                : 'bg-amber-50/60 border-amber-200 hover:bg-amber-100/70'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-extrabold text-amber-900">Customer Return</span>
+              <RotateCcw className="w-4 h-4 text-amber-600" />
+            </div>
+            <div className="text-xl font-black text-amber-700 font-mono">{statusCounts.Return}</div>
+            <span className="text-[10px] text-amber-800 font-semibold block mt-0.5">Returned by Customer</span>
+          </button>
+
+          {/* RTO Card */}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'RTO' ? 'ALL' : 'RTO')}
+            className={`p-3.5 rounded-xl border text-left transition cursor-pointer ${
+              statusFilter === 'RTO'
+                ? 'bg-purple-100 border-purple-500 shadow-xs'
+                : 'bg-purple-50/60 border-purple-200 hover:bg-purple-100/70'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-extrabold text-purple-900">RTO (Return to Origin)</span>
+              <PackageX className="w-4 h-4 text-purple-600" />
+            </div>
+            <div className="text-xl font-black text-purple-700 font-mono">{statusCounts.RTO}</div>
+            <span className="text-[10px] text-purple-800 font-semibold block mt-0.5">Undelivered / RTO</span>
+          </button>
+
+          {/* Other / Shipped Card */}
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-left">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-extrabold text-slate-800">Shipped / Other</span>
+              <Truck className="w-4 h-4 text-slate-500" />
+            </div>
+            <div className="text-xl font-black text-slate-700 font-mono">{statusCounts.Other}</div>
+            <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">In Transit / Fee / Claim</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Reconciliation Data Table */}
+      <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-200">
           <div>
             <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -96,6 +230,7 @@ export default function ReconciliationView({ reconciliation }) {
               <Code className="w-3.5 h-3.5 text-cyan-400" />
               <span>Raw JSON Data</span>
             </button>
+
             {/* Search Box */}
             <div className="relative flex-1 sm:w-64">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -108,109 +243,86 @@ export default function ReconciliationView({ reconciliation }) {
               />
             </div>
 
-            {/* Filter Selector */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="py-2 px-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 font-medium focus:outline-none focus:border-blue-500"
-            >
-              <option value="ALL">All Records ({allRecords.length})</option>
-              <option value="MATCHED">Matched ({matchedList.length})</option>
-              <option value="MISSING_PAYMENT">Unsettled ({missingInPmtList.length})</option>
-              <option value="HISTORICAL_PAYMENT">Historical ({historicalList.length})</option>
-            </select>
+            {/* Filter Dropdown */}
+            <div className="relative shrink-0">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="py-2 px-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 font-bold focus:outline-none focus:border-blue-500 cursor-pointer"
+              >
+                <option value="ALL">All Statuses ({allRecords.length})</option>
+                <option value="MATCHED">Matched ({matchedList.length})</option>
+                <option value="MISSING_PAYMENT">Unsettled ({missingInPmtList.length})</option>
+                <option value="HISTORICAL_PAYMENT">Historical ({historicalList.length})</option>
+                <option value="DELIVERED">Delivered ({statusCounts.Delivered})</option>
+                <option value="CANCELLED">Cancelled ({statusCounts.Cancelled})</option>
+                <option value="RETURN">Customer Return ({statusCounts.Return})</option>
+                <option value="RTO">RTO ({statusCounts.RTO})</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        {/* Table View */}
+        {/* Data Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs font-mono">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-200 text-slate-600 font-bold bg-slate-50">
+              <tr className="border-b border-slate-200 text-[11px] font-extrabold text-slate-500 uppercase tracking-wider bg-slate-50/50">
                 <th className="py-3 px-4">Order ID</th>
-                <th className="py-3 px-4">Order Date</th>
-                <th className="py-3 px-4">Product SKU</th>
-                <th className="py-3 px-4">Qty</th>
-                <th className="py-3 px-4">Order Status</th>
-                <th className="py-3 px-4">Payment Events</th>
-                <th className="py-3 px-4 text-right">Net Payout Amount</th>
-                <th className="py-3 px-4 text-center">Match Status</th>
+                <th className="py-3 px-4">Status / Event</th>
+                <th className="py-3 px-4">SKU / Product Details</th>
+                <th className="py-3 px-4 text-right">Net Payout (₹)</th>
+                <th className="py-3 px-4 text-center">Match State</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 text-xs font-mono">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-500 font-medium">
-                    No matching reconciliation records found for '{searchTerm}'.
+                  <td colSpan={5} className="py-8 text-center text-slate-400 font-sans font-medium">
+                    No order settlement records match the active search or status filter.
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((r, idx) => {
-                  const oid = r.orderId || r.order_id;
-                  const isExpanded = expandedRowId === oid;
+                filteredRecords.map((row, rIdx) => {
+                  const oid = row.orderId || row.order_id || 'N/A';
+                  const status = row.status || row.live_order_status || row.eventStatus || 'DELIVERED';
+                  const sku = row.productDetails || row.sku || 'N/A';
+                  const payout = row.netPayout !== undefined ? row.netPayout : (row.amount || 0);
+
+                  const isMatched = row.statusType === 'MATCHED';
+                  const isMissingPmt = row.statusType === 'MISSING_PAYMENT';
 
                   return (
-                    <React.Fragment key={idx}>
-                      <tr
-                        onClick={() => setExpandedRowId(isExpanded ? null : oid)}
-                        className="hover:bg-blue-50/50 cursor-pointer transition"
-                      >
-                        <td className="py-3 px-4 font-bold text-blue-700">{oid}</td>
-                        <td className="py-3 px-4 text-slate-600">{r.orderDate || r.order_date || 'N/A'}</td>
-                        <td className="py-3 px-4 text-slate-800">{r.productDetails || r.sku || 'N/A'}</td>
-                        <td className="py-3 px-4 text-slate-700">{r.qty || 1}</td>
-                        <td className="py-3 px-4 text-slate-700">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 font-sans font-semibold text-[11px]">
-                            {r.orderSheetStatus || r.order_status || 'N/A'}
+                    <tr key={rIdx} className="hover:bg-slate-50/80 transition">
+                      <td className="py-3 px-4 font-bold text-slate-900">{oid}</td>
+                      <td className="py-3 px-4">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                          {status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-700 truncate max-w-xs">{sku}</td>
+                      <td className={`py-3 px-4 text-right font-black ${payout < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        ₹{Number(payout).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {isMatched ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <CheckCircle2 className="w-3 h-3" />
+                            MATCHED
                           </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 truncate max-w-[180px]">
-                          {r.paymentStatuses || r.payment_status || 'N/A'}
-                        </td>
-                        <td className="py-3 px-4 text-right font-extrabold text-emerald-700">
-                          ₹{((r.totalPayment !== undefined ? r.totalPayment : r.payment_amount) || 0).toFixed(2)}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {r.statusType === 'MATCHED' && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              ✓ MATCHED
-                            </span>
-                          )}
-                          {r.statusType === 'MISSING_PAYMENT' && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                              ⚠ UNSETTLED
-                            </span>
-                          )}
-                          {r.statusType === 'HISTORICAL_PAYMENT' && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-200">
-                              🕒 HISTORICAL
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-
-                      {isExpanded && (
-                        <tr className="bg-slate-50 border-b border-slate-200">
-                          <td colSpan={8} className="p-4 text-xs font-sans">
-                            <div className="p-3 rounded-xl bg-white border border-slate-200 space-y-2 shadow-xs">
-                              <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                                <DollarSign className="w-4 h-4 text-emerald-600" />
-                                Multi-Event Net Payout Aggregation Breakdown for Order [{oid}]
-                              </h4>
-                              <p className="text-[11px] text-slate-600">
-                                Status Events Combined: <strong className="text-blue-700 font-mono">{r.paymentStatuses || 'N/A'}</strong>
-                              </p>
-                              <div className="flex justify-between items-center text-xs font-mono pt-2 border-t border-slate-200">
-                                <span className="text-slate-600">Final Aggregated Net Settlement Amount:</span>
-                                <span className="text-emerald-700 font-extrabold text-sm">
-                                  ₹{((r.totalPayment !== undefined ? r.totalPayment : r.payment_amount) || 0).toFixed(2)}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
+                        ) : isMissingPmt ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            <AlertTriangle className="w-3 h-3" />
+                            UNSETTLED
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">
+                            <Clock className="w-3 h-3" />
+                            HISTORICAL
+                          </span>
+                        )}
+                      </td>
+                    </tr>
                   );
                 })
               )}
