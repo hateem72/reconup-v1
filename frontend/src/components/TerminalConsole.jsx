@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Maximize2, Minimize2, Trash2, ChevronRight, RefreshCw } from 'lucide-react';
+import { Terminal, Maximize2, Minimize2, Trash2, ChevronRight, RefreshCw, ArrowDown } from 'lucide-react';
 
 export default function TerminalConsole({ batchId, isProcessing }) {
   const [logs, setLogs] = useState([]);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
   const terminalContainerRef = useRef(null);
 
   useEffect(() => {
@@ -31,14 +32,31 @@ export default function TerminalConsole({ batchId, isProcessing }) {
     return () => clearInterval(interval);
   }, [batchId]);
 
-  useEffect(() => {
+  // Handle user scroll detection
+  const handleScroll = () => {
     if (terminalContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = terminalContainerRef.current;
+      // If user has scrolled up by more than 40px, pause auto-scroll so they can read previous logs
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 40;
+      setAutoScroll(isAtBottom);
+    }
+  };
+
+  useEffect(() => {
+    if (autoScroll && terminalContainerRef.current) {
       terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
     }
-  }, [logs]);
+  }, [logs, autoScroll]);
+
+  const scrollToBottom = () => {
+    if (terminalContainerRef.current) {
+      terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
+      setAutoScroll(true);
+    }
+  };
 
   return (
-    <div className="mb-8 rounded-2xl bg-white border border-slate-200 shadow-xs overflow-hidden font-mono text-xs">
+    <div className="mb-8 rounded-2xl bg-white border border-slate-200 shadow-xs overflow-hidden font-mono text-xs relative">
       <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Terminal className="w-4 h-4 text-blue-600" />
@@ -75,8 +93,9 @@ export default function TerminalConsole({ batchId, isProcessing }) {
 
       <div
         ref={terminalContainerRef}
+        onScroll={handleScroll}
         className={`p-4 space-y-1.5 overflow-y-auto bg-slate-950 text-slate-100 transition-all ${
-          isExpanded ? 'h-96' : 'h-40'
+          isExpanded ? 'h-96' : 'h-48'
         }`}
       >
         {logs.length === 0 ? (
@@ -108,6 +127,17 @@ export default function TerminalConsole({ batchId, isProcessing }) {
           })
         )}
       </div>
+
+      {/* Floating Jump-to-Bottom Button when user scrolls up */}
+      {!autoScroll && logs.length > 0 && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-3 right-4 px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-sans font-bold flex items-center gap-1.5 shadow-md transition animate-bounce cursor-pointer z-10"
+        >
+          <ArrowDown className="w-3.5 h-3.5" />
+          <span>Jump to Latest Logs</span>
+        </button>
+      )}
     </div>
   );
 }
