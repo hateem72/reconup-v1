@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle2, Bot, ArrowRight, RefreshCw, Play, Tag } from 'lucide-react';
+import { CheckCircle2, Bot, ArrowRight, RefreshCw, Play, Tag, Code } from 'lucide-react';
+import RawJsonModal from './RawJsonModal';
 
 const CANONICAL_CATEGORIES = [
   'Delivered',
@@ -17,6 +18,7 @@ export default function StatusNormalizationView({ batchId, onNext, onReprocessSu
   const [nodeDetails, setNodeDetails] = useState(null);
   const [statusOverrides, setStatusOverrides] = useState({});
   const [isReprocessing, setIsReprocessing] = useState(false);
+  const [showJsonModal, setShowJsonModal] = useState(false);
 
   useEffect(() => {
     if (!batchId) return;
@@ -74,7 +76,14 @@ export default function StatusNormalizationView({ batchId, onNext, onReprocessSu
 
   return (
     <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+      <RawJsonModal
+        title="Node 3 LLM Status Classification Matrix"
+        data={nodeDetails?.node3 || { status_mappings: {} }}
+        isOpen={showJsonModal}
+        onClose={() => setShowJsonModal(false)}
+      />
+
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 border border-blue-200">
             <Bot className="w-6 h-6" />
@@ -87,9 +96,20 @@ export default function StatusNormalizationView({ batchId, onNext, onReprocessSu
           </div>
         </div>
 
-        <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-          {rawStatusEntries.length} Unique Raw Statuses Extracted
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowJsonModal(true)}
+            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-mono font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+            title="View Raw Backend JSON Payload"
+          >
+            <Code className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Raw JSON Data</span>
+          </button>
+
+          <span className="px-3 py-1.5 rounded-full text-xs font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+            {rawStatusEntries.length} Unique Raw Statuses Extracted
+          </span>
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -154,7 +174,7 @@ export default function StatusNormalizationView({ batchId, onNext, onReprocessSu
         <button
           onClick={handleApplyOverridesAndReprocess}
           disabled={isReprocessing}
-          className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2 transition disabled:opacity-50"
+          className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2 transition disabled:opacity-50 cursor-pointer"
         >
           {isReprocessing ? (
             <>
@@ -171,7 +191,7 @@ export default function StatusNormalizationView({ batchId, onNext, onReprocessSu
 
         <button
           onClick={onNext}
-          className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 transition"
+          className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 transition cursor-pointer"
         >
           <span>Proceed to Step 5: Order Reconciliation Database</span>
           <ArrowRight className="w-4 h-4" />

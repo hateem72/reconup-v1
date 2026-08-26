@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Search, Filter, CheckCircle2, AlertTriangle, Clock, Layers, ArrowUpRight, DollarSign } from 'lucide-react';
+import { Search, Filter, CheckCircle2, AlertTriangle, Clock, Layers, ArrowUpRight, DollarSign, Code } from 'lucide-react';
+import RawJsonModal from './RawJsonModal';
 
 export default function ReconciliationView({ reconciliation }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [expandedRowId, setExpandedRowId] = useState(null);
+  const [showJsonModal, setShowJsonModal] = useState(false);
 
   if (!reconciliation) {
     return (
@@ -66,6 +68,13 @@ export default function ReconciliationView({ reconciliation }) {
       </div>
 
       {/* Main Reconciliation Data Table */}
+      <RawJsonModal
+        title="Node 5 Order Reconciliation & Net Payout Database"
+        data={reconciliation}
+        isOpen={showJsonModal}
+        onClose={() => setShowJsonModal(false)}
+      />
+
       <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-200">
           <div>
@@ -79,6 +88,14 @@ export default function ReconciliationView({ reconciliation }) {
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
+            <button
+              onClick={() => setShowJsonModal(true)}
+              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-mono font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer shrink-0"
+              title="View Raw Backend JSON Payload"
+            >
+              <Code className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Raw JSON Data</span>
+            </button>
             {/* Search Box */}
             <div className="relative flex-1 sm:w-64">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />

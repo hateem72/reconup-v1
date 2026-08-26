@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ShieldAlert, Bot, DollarSign, ArrowRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ShieldAlert, Bot, DollarSign, ArrowRight, Code } from 'lucide-react';
+import RawJsonModal from './RawJsonModal';
 
 export default function ExceptionsView({ exceptions, batchId, onExceptionResolved, onNext }) {
   const [approvingId, setApprovingId] = useState(null);
+  const [showJsonModal, setShowJsonModal] = useState(false);
 
   const handleApproveRule = async (rulePattern) => {
     setApprovingId(rulePattern);
@@ -30,22 +32,40 @@ export default function ExceptionsView({ exceptions, batchId, onExceptionResolve
 
   return (
     <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+      <RawJsonModal
+        title="Node 7 Human Governance & Exception Queue"
+        data={{ batch_id: batchId, total_exceptions: exceptions.length, exceptions: exceptions }}
+        isOpen={showJsonModal}
+        onClose={() => setShowJsonModal(false)}
+      />
+
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200">
             <Bot className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-base font-extrabold text-slate-900">Step 5: Human-in-the-Loop Financial Governance</h2>
+            <h2 className="text-base font-extrabold text-slate-900">Step 6: Human-in-the-Loop Financial Governance</h2>
             <p className="text-xs text-slate-500 font-medium">
               Autonomous Agent <strong className="text-amber-800">ExceptionInvestigationAgent</strong> surfaced unresolved items for human approval
             </p>
           </div>
         </div>
 
-        <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-800 border border-amber-200">
-          Governance Queue
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowJsonModal(true)}
+            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-mono font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+            title="View Raw Backend JSON Payload"
+          >
+            <Code className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Raw JSON Data</span>
+          </button>
+
+          <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-800 border border-amber-200">
+            Governance Queue
+          </span>
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -76,7 +96,7 @@ export default function ExceptionsView({ exceptions, batchId, onExceptionResolve
               <button
                 onClick={() => handleApproveRule(exc.pattern || 'Return Assurance Fee')}
                 disabled={approvingId === exc.pattern}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition shrink-0 shadow-xs"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition shrink-0 shadow-xs cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Approve & Apply Standard Rule</span>
@@ -84,16 +104,6 @@ export default function ExceptionsView({ exceptions, batchId, onExceptionResolve
             </div>
           ))
         )}
-      </div>
-
-      <div className="flex justify-end pt-4 border-t border-slate-200">
-        <button
-          onClick={onNext}
-          className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 transition"
-        >
-          <span>Proceed to Step 6: AI Finance Controller Q&A Console</span>
-          <ArrowRight className="w-4 h-4" />
-        </button>
       </div>
     </div>
   );
