@@ -36,6 +36,7 @@ export default function ReconciliationView({ reconciliation }) {
     Other: 0
   };
 
+  // Compute Operational Lifecycle Status Counts
   allRecords.forEach(r => {
     const rawSt = (r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().trim();
     if (rawSt.includes('deliver')) {

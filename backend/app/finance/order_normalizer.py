@@ -69,14 +69,14 @@ def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet
     Uses local LLM (Ollama qwen2.5:3b) to semantically map raw column headers to canonical fields.
     For Master Order Sheets: Maps order_id, sku, quantity, status, order_date (Amount excluded).
     For Payment Settlement Sheets: Maps order_id, amount, status, sku, quantity, payment_date.
-    Guarantees required order_id and amount fields are never omitted.
+    The LLM semantic response is the primary authority for header mapping.
     """
     log_stage("AGENT", f"Invoking ColumnMappingAgent (Local LLM) for {sheet_role} ({len(headers)} headers)")
     
     is_payment = "PAYMENT" in sheet_role.upper() or "SETTLEMENT" in sheet_role.upper()
     canonical_targets = (
-        "order_id, amount, status, sku, quantity, payment_date (CRITICAL: 'order_id' e.g. Sub Order No MUST be mapped!)" if is_payment
-        else "order_id, sku, quantity, status, order_date (Do NOT map amount to Master Order Sheets)"
+        "order_id, amount, status, sku, quantity, payment_date" if is_payment
+        else "order_id, sku, quantity, status, order_date"
     )
 
     llm_mappings = {}
@@ -86,17 +86,28 @@ def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet
         from app.agents.core.prompts import COLUMN_MAPPING_PROMPT
         
         llm = get_llm()
+
+        # Truncate long string values to 35 chars to keep LLM context clean and lightweight
         sample_clean = []
-        for r in sample_rows[:3]:
-            sample_clean.append({k: str(v) for k, v in r.items() if k != "id"})
+        for r in sample_rows[:2]:
+            clean_r = {}
+            for k, v in r.items():
+                if k != "id":
+                    val_str = str(v)
+                    clean_r[str(k)] = val_str[:35] if len(val_str) > 35 else val_str
+            sample_clean.append(clean_r)
             
         sample_str = json.dumps(sample_clean, indent=2)
+        headers_str = json.dumps(headers, indent=2)
+
         prompt_input = (
             f"{COLUMN_MAPPING_PROMPT}\n\n"
-            f"Target Fields for {sheet_role}: {canonical_targets}\n"
-            f"Source Headers List: {headers}\n"
-            f"Sample Rows Data:\n{sample_str}\n\n"
-            f"Respond with valid JSON mapping dictionary containing key 'mappings':"
+            f"Sheet Role: {sheet_role}\n"
+            f"Target Canonical Fields to Map: {canonical_targets}\n\n"
+            f"Exact List of Discovered Source Headers ({len(headers)} total):\n{headers_str}\n\n"
+            f"Sample Data Rows Preview:\n{sample_str}\n\n"
+            f"Analyze the headers and sample values above. Map EACH target canonical field to the EXACT matching column header from the list above.\n"
+            f"Output a valid JSON object with key 'mappings':"
         )
         
         res = llm.invoke(prompt_input)
@@ -110,39 +121,51 @@ def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet
                 llm_mappings = parsed
 
     except Exception as e:
-        log_stage("AGENT", f"LLM mapping exception, completing with deterministic mapper: {str(e)}", level="warn")
+        log_stage("AGENT", f"LLM mapping exception: {str(e)}", level="warn")
 
-    # Smart Fallback & Safety Filler: Ensure order_id and amount are NEVER missing if present in headers
+    # Smart Fallback & Safety Filler: Ensure required fields are never omitted if present in headers
     deterministic = auto_map_payment_columns(headers) if is_payment else auto_map_order_columns(headers)
     if is_payment and "settlement_amount" in deterministic and "amount" not in deterministic:
         deterministic["amount"] = deterministic.pop("settlement_amount")
 
     final_mappings = {}
     
-    # 1. Populate LLM mappings first
+    # 1. Process LLM Mappings as Primary Source of Truth
     for c_field, info in llm_mappings.items():
         if isinstance(info, dict) and "source_column" in info:
-            if not is_payment and c_field == "amount":
-                continue
-            final_mappings[c_field] = info
-        elif isinstance(info, str) and info in headers:
+            src_c = str(info["source_column"]).strip()
+            matched = next((h for h in headers if h.lower() == src_c.lower()), src_c if src_c in headers else None)
+            if matched:
+                if not is_payment and c_field == "amount":
+                    continue
+                conf = info.get("confidence", 0.95)
+                rat = info.get("rationale", f"LLM mapped canonical field '{c_field}' to '{matched}'.")
+                final_mappings[c_field] = {
+                    "source_column": matched,
+                    "confidence": float(conf) if conf is not None else 0.95,
+                    "rationale": rat
+                }
+        elif isinstance(info, str):
+            src_c = info.strip()
+            matched = next((h for h in headers if h.lower() == src_c.lower()), None)
+            if matched:
+                if not is_payment and c_field == "amount":
+                    continue
+                final_mappings[c_field] = {
+                    "source_column": matched,
+                    "confidence": 0.95,
+                    "rationale": f"LLM mapped canonical field '{c_field}' to '{matched}'."
+                }
+
+    # 2. Fill missing canonical fields from deterministic mapper if LLM missed them
+    for c_field, src_col in deterministic.items():
+        if c_field not in final_mappings and src_col in headers:
             if not is_payment and c_field == "amount":
                 continue
             final_mappings[c_field] = {
-                "source_column": info,
-                "confidence": 0.95,
-                "rationale": f"LLM mapped canonical field '{c_field}' to '{info}'."
-            }
-
-    # 2. Fill missing required fields (order_id, amount) from deterministic mapper if LLM missed them
-    required_fields = ["order_id", "amount"] if is_payment else ["order_id"]
-    for req_f in required_fields:
-        if req_f not in final_mappings and req_f in deterministic:
-            src_col = deterministic[req_f]
-            final_mappings[req_f] = {
                 "source_column": src_col,
-                "confidence": 1.0,
-                "rationale": f"Keyword fallback matched '{src_col}' for required field '{req_f}'."
+                "confidence": 0.90,
+                "rationale": f"Keyword fallback matched '{src_col}' for field '{c_field}'."
             }
 
     log_stage("AGENT", f"ColumnMappingAgent completed with {len(final_mappings)} canonical fields mapped")
