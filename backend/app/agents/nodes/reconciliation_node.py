@@ -38,10 +38,13 @@ def reconciliation_node(state: FinanceState) -> Dict[str, Any]:
     print(f"  • Master Order Match Rate: {match_rate}%")
     print(f"  • Life-Cycle Totals: Delivered={rec_res.get('countDelivered', 0)}, Returns={rec_res.get('countReturns', 0)}, RTO={rec_res.get('countRTO', 0)}")
 
+    log_stage("NODE 5", f"Reconciliation Summary: {len(matched_items)} matched orders ({match_rate}% match rate), {len(missing_in_pmt)} unsettled orders missing payment")
+
     if matched_items:
         print(f"\n  • Sample Matched Net Payout Aggregations (Top 3 Records):")
         for m in matched_items[:3]:
             print(f"      - Order [{m.get('orderId')}] ──▶ Status: {m.get('orderSheetStatus')} | Net Payout: ₹{m.get('totalPayment')} | Events: '{m.get('paymentStatuses')}'")
+            log_stage("NODE 5", f"Sample Net Payout: Order '{m.get('orderId')}' [{m.get('orderSheetStatus')}] ──▶ Net Payout INR {m.get('totalPayment')} (Events: '{m.get('paymentStatuses')}')")
 
     print("\n" + "="*80)
     print(f"  [NODE 5 COMPLETE] Reconciliation verified ({len(matched_items)} matched, {len(missing_in_pmt)} missing payment).")

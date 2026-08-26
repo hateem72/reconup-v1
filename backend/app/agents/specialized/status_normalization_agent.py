@@ -40,6 +40,7 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
 
     print(f"\n--- [NODE 3 AI AGENT: StatusNormalizationAgent] ---")
     print(f"  • Extracted {len(raw_statuses)} unique raw status strings across datasets.")
+    log_stage("NODE 3", f"StatusNormalizationAgent extracted {len(raw_statuses)} unique raw status strings across datasets")
 
     status_map = llm_normalize_statuses(list(raw_statuses))
 
@@ -49,6 +50,7 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
         conf = info.get("confidence") if isinstance(info, dict) else 1.0
         conf_val = float(conf) if conf is not None else 1.0
         print(f"      - \"{raw_s}\" ──▶ Canonical Category: [{cat}] (Confidence: {round(conf_val, 2)})")
+        log_stage("NODE 3", f"Raw Status '{raw_s}' ──▶ Canonical Category: [{cat}] (Confidence: {round(conf_val, 2)})")
 
     canonical_orders: List[CanonicalOrder] = []
     canonical_payments: List[CanonicalPayment] = []
@@ -125,6 +127,9 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
     # Filter payment lines to strictly retain only those matching Master Order Sheet Order IDs
     filtered_payments = [p for p in canonical_payments if p.order_id in master_order_ids]
     discarded_count = len(canonical_payments) - len(filtered_payments)
+
+    log_stage("NODE 3", f"Normalized Master Orders: {len(canonical_orders)} records ({len(master_order_ids)} unique order IDs)")
+    log_stage("NODE 3", f"Retained Payment Lines: {len(filtered_payments)} lines (Filtered out {discarded_count} historical lines, Data Reduction: {round((discarded_count / max(len(canonical_payments), 1)) * 100, 1)}%)")
 
     print("\n" + "="*80)
     print(f"  [NODE 3 SUMMARY & PAYMENT SHEET FILTERING]:")

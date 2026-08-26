@@ -18,7 +18,7 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
     print(f"  [NODE 1: INGEST & EXACT HEADER PROFILING] EXECUTION STARTED FOR BATCH: {batch_id}")
     print("="*80)
     
-    log_stage("NODE 1", f"Starting Node 1 execution for batch '{batch_id}'")
+    log_stage("NODE 1", f"Starting Node 1 Ingest & Exact Header Profiling for batch '{batch_id}'")
     log_stage("NODE 1", f"Files received in state: {len(files_info)}")
 
     profiles = []
@@ -30,7 +30,6 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
         rows = ds.get("data", [])
         
         print(f"\n--- [NODE 1 PROFILING FILE #{idx+1}]: {fname} [ROLE: {role}] ---")
-        log_stage("NODE 1", f"File #{idx+1}: '{fname}' [ROLE: {role}] contains {len(rows)} raw data rows")
 
         if rows and isinstance(rows[0], dict):
             df_raw = pd.DataFrame(rows)
@@ -39,6 +38,9 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
             sheet_profile = profile_sheet(df_raw, sheet_name=fname, sheet_idx=idx)
             profiles.append(sheet_profile)
             total_sheets_found += 1
+
+            log_stage("NODE 1", f"File #{idx+1}: '{fname}' [{role}] ──▶ {sheet_profile.row_count} rows x {len(exact_headers)} cols (Header Row: {ds.get('header_row_index', 1)})")
+            log_stage("NODE 1", f"Discovered Source Headers ({len(exact_headers)}): {', '.join(exact_headers[:8])}{'...' if len(exact_headers)>8 else ''}")
 
             print(f"  • Sheet Name: {sheet_profile.sheet_name}")
             print(f"  • Designated Role: {role}")
@@ -65,7 +67,7 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
     print(f"  [NODE 1 COMPLETE] Profiled {total_sheets_found} sheets across {len(files_info)} files.")
     print("="*80 + "\n")
 
-    log_stage("NODE 1", f"Node 1 complete. Profiled {total_sheets_found} sheets with exact header names.")
+    log_stage("NODE 1", f"Node 1 complete. Profiled {total_sheets_found} sheets with exact header statistical profiles.")
 
     return {
         "sheet_profiles": profiles,

@@ -57,6 +57,8 @@ def pattern_detection_node(state: FinanceState) -> Dict[str, Any]:
     print(f"  • Blank/Null Status Repaired via Secondary Columns: {repaired_orders_count} orders")
     print(f"  • Order Status Integrity: 100.0% Coverage (0 blank status records)")
 
+    log_stage("NODE 4", f"Master Order Status Audit: {valid_orders_count} primary valid, {repaired_orders_count} blank/null statuses repaired (100% coverage)")
+
     classified_deductions = 0
     classified_credits = 0
     classified_order_payments = 0
@@ -98,24 +100,21 @@ def pattern_detection_node(state: FinanceState) -> Dict[str, Any]:
 
     print(f"\n--- [NODE 4 PAYMENT SETTLEMENT NON-ORDER ROW CLASSIFICATION] ---")
     print(f"  • Total Payment Event Lines Inspected: {len(canonical_payments)}")
-    print(f"  • Standard Order Settlements Classified: {classified_order_payments} lines")
-    print(f"  • Non-Order Deductions Classified (Ads/Fees/Recoveries): {classified_deductions} lines")
-    print(f"  • Non-Order Credits Classified (Compensations/Claims): {classified_credits} lines")
-    print(f"  • Payment Status Integrity: 100.0% Coverage (0 unclassified lines)")
-
+    print(f"  • Order Settlement Lines: {classified_order_payments} lines")
+    print(f"  • Non-Order Fee Deductions Identified: {classified_deductions} lines")
+    print(f"  • Non-Order Compensation/Claims Identified: {classified_credits} lines")
     print("\n" + "="*80)
-    print(f"  [NODE 4 SUMMARY]:")
-    print(f"  • Order Status Coverage: 100.0% ({len(canonical_orders)} orders ready for reconciliation)")
-    print(f"  • Payment Events Coverage: 100.0% ({len(canonical_payments)} event lines ready for reconciliation)")
+    print(f"  [NODE 4 COMPLETE] Status integrity verified for {len(canonical_orders)} orders and {len(canonical_payments)} payment events.")
     print("="*80 + "\n")
 
-    log_stage("NODE 4", f"Node 4 complete. Audit verified 100% status coverage across orders and payments.")
+    log_stage("NODE 4", f"Payment Settlement Audit: {classified_order_payments} order lines, {classified_deductions} fee deductions, {classified_credits} compensation credits")
+    log_stage("NODE 4", f"Node 4 complete. Integrity verified across {len(canonical_orders)} orders and {len(canonical_payments)} payment lines.")
 
     return {
         "canonical_orders": canonical_orders,
         "canonical_payments": canonical_payments,
         "repaired_orders_count": repaired_orders_count,
-        "classified_deductions_count": classified_deductions,
-        "classified_credits_count": classified_credits,
-        "status": "NODE_4_COMPLETE"
+        "classified_deductions": classified_deductions,
+        "classified_credits": classified_credits,
+        "status": "NODE_4_INTEGRITY_CHECKED"
     }

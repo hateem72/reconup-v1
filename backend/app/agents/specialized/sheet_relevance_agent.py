@@ -80,16 +80,18 @@ Evaluate relevance now:"""
                 retained_datasets.append(ds)
                 print(f"  ✅ [DECISION]: RETAINED SUB-TAB")
                 print(f"  • Rationale: {rationale}")
+                log_stage("NODE 1.5", f"✅ Sub-Tab '{fname}': RETAINED ──▶ {rationale}")
             else:
                 dropped_datasets.append({"filename": fname, "role": role, "row_count": row_cnt, "rationale": rationale})
                 print(f"  🗑️ [DECISION]: DROPPED SUB-TAB (Summary/Disclaimer)")
                 print(f"  • Rationale: {rationale}")
+                log_stage("NODE 1.5", f"🗑️ Sub-Tab '{fname}': DROPPED ──▶ {rationale}")
 
         print("\n" + "="*80)
         print(f"  [NODE 1.5 COMPLETE] Retained {len(retained_datasets)} essential transaction sheets. Dropped {len(dropped_datasets)} summary sub-tabs.")
         print("="*80 + "\n")
 
-        log_stage("NODE 1.5", f"Node 1.5 complete. Retained {len(retained_datasets)} sheets, dropped {len(dropped_datasets)} sub-tabs.")
+        log_stage("NODE 1.5", f"Node 1.5 complete. Retained {len(retained_datasets)} transaction sheets, dropped {len(dropped_datasets)} summary sub-tabs.")
 
         return {
             "retained_datasets": retained_datasets,

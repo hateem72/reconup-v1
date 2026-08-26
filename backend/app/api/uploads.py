@@ -8,7 +8,7 @@ from app.database.database import get_db
 from app.database.repositories import FinanceRepository
 from app.finance.parser import parse_csv_data, parse_excel_bytes, parse_zip_file
 from app.agents.nodes import ingest_node, sheet_filtering_node, validation_node, normalization_node, pattern_detection_node, reconciliation_node
-from app.core.logging import log_stage
+from app.core.logging import log_stage, set_audit_context, clear_audit_context
 
 router = APIRouter()
 
@@ -34,6 +34,7 @@ async def create_and_process_batch(
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
     repo = FinanceRepository(db)
+    set_audit_context(batch_id, db)
 
     file_roles_map = {}
     if file_roles_json:

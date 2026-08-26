@@ -56,7 +56,7 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
             cache_hits += 1
             mapping_result = schema_cache[schema_fingerprint]
             print(f"  ⚡ [SCHEMA CACHE HIT]: Headers match previously mapped {entity_role}. Reusing cached AI mapping matrix (0s LLM latency)!")
-            log_stage("NODE 2", f"Reusing cached LLM mapping matrix for '{fname}' (Cache Hit #{cache_hits})")
+            log_stage("NODE 2", f"⚡ Schema Cache Hit for '{fname}': Reusing LLM mapping matrix (0s latency)")
         else:
             log_stage("NODE 2", f"AI Agent ColumnMappingAgent analyzing {len(headers)} headers for '{fname}'")
             if is_summary_tab:
@@ -87,8 +87,7 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
                 conf_val = float(conf) if conf is not None else 1.0
                 rat = info.get("rationale", "")
                 print(f"      - Canonical [{c_field}] ──▶ \"{src_c}\" (Confidence: {round(conf_val, 2)})")
-                if rat:
-                    print(f"        Rationale: {rat}")
+                log_stage("NODE 2", f"Dataset '{fname}': Canonical [{c_field}] ──▶ '{src_c}' (Confidence: {round(conf_val, 2)})")
 
         df_data = pd.DataFrame(rows)
         
@@ -101,6 +100,8 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
             val_status = "VALID" if is_valid else "WARNINGS_FOUND"
 
         validation_results.append({"filename": fname, "role": entity_role, "is_valid": is_valid, "errors": errors})
+
+        log_stage("NODE 2", f"Python Structural Guardrail Result for '{fname}': {val_status}")
 
         print(f"  • Python Structural Guardrail Check: {val_status}")
         if errors:
