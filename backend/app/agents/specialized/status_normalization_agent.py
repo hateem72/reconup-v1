@@ -30,7 +30,8 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
         status_col = mapping.get("status", {}).get("source_column") if isinstance(mapping.get("status"), dict) else None
         
         if not status_col and rows and isinstance(rows[0], dict):
-            status_col = next((k for k in rows[0].keys() if "status" in k.lower() or "credit" in k.lower()), None)
+            all_cols = ds.get("exact_headers") or list(dict.fromkeys([k for r in rows[:10] for k in r.keys() if k != "id"]))
+            status_col = next((k for k in all_cols if "status" in k.lower() or "credit" in k.lower()), None)
 
         if status_col:
             for r in rows:

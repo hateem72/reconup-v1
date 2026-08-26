@@ -34,7 +34,7 @@ class SheetRelevanceAgent:
 
             headers = []
             if rows and isinstance(rows[0], dict):
-                headers = [str(k) for k in rows[0].keys() if k != "id"]
+                headers = ds.get("exact_headers") or [str(k) for k in dict.fromkeys([k for r in rows[:10] for k in r.keys() if k != "id"])]
 
             fname_lower = fname.lower()
             

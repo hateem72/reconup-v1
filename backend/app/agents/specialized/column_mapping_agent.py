@@ -43,7 +43,7 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
         if not rows or not isinstance(rows[0], dict):
             continue
 
-        headers = [str(k) for k in rows[0].keys() if k != "id"]
+        headers = ds.get("exact_headers") or [str(k) for k in dict.fromkeys([k for r in rows[:10] for k in r.keys() if k != "id"])]
         
         is_summary_tab = len(headers) < 4 or any(sub_k in fname.lower() for sub_k in SUMMARY_KEYWORDS)
         entity_role = "PAYMENT SUMMARY TAB" if (is_summary_tab and "ORDER" not in role.upper()) else role

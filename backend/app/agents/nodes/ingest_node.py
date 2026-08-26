@@ -33,7 +33,7 @@ def ingest_node(state: FinanceState) -> Dict[str, Any]:
 
         if rows and isinstance(rows[0], dict):
             df_raw = pd.DataFrame(rows)
-            exact_headers = [str(k) for k in rows[0].keys() if k != "id"]
+            exact_headers = ds.get("exact_headers") or [str(k) for k in dict.fromkeys([k for r in rows[:10] for k in r.keys() if k != "id"])]
             
             sheet_profile = profile_sheet(df_raw, sheet_name=fname, sheet_idx=idx)
             profiles.append(sheet_profile)

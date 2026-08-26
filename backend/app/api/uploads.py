@@ -323,7 +323,7 @@ def get_batch_node_details(batch_id: str, db: Session = Depends(get_db)):
         fname = ds.get("filename", "")
         role = ds.get("role", "")
         rows = ds.get("data", [])
-        headers = [str(k) for k in rows[0].keys() if k != "id"] if rows and isinstance(rows[0], dict) else []
+        headers = ds.get("exact_headers") or ([str(k) for k in dict.fromkeys([k for r in rows[:10] for k in r.keys() if k != "id"])] if rows and isinstance(rows[0], dict) else [])
         retained_info.append({
             "filename": fname,
             "role": role,
