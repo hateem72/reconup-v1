@@ -1,14 +1,14 @@
 import React from 'react';
-import { Upload, Filter, Grid, CheckCircle2, AlertTriangle, DollarSign, MessageSquare } from 'lucide-react';
+import { Upload, Filter, Grid, CheckCircle2, AlertTriangle, DollarSign, MessageSquare, Tag } from 'lucide-react';
 
 export default function PipelineStepper({ currentStep, setStep, pendingExceptionsCount }) {
   const steps = [
-    { id: 1, name: '1. Ingest Data', icon: Upload, desc: 'Upload Orders & Payments' },
-    { id: 2, name: '2. AI Sub-Tab Filter', icon: Filter, desc: 'SheetRelevanceAgent' },
-    { id: 3, name: '3. LLM Mapping Matrix', icon: Grid, desc: 'ColumnMappingAgent' },
-    { id: 4, name: '4. Order Reconciliation', icon: CheckCircle2, desc: 'ReconciliationEngine' },
-    { id: 5, name: '5. AI Exceptions & P&L', icon: DollarSign, desc: 'Human Governance' },
-    { id: 6, name: '6. AI Q&A Console', icon: MessageSquare, desc: 'Natural Language Agent' },
+    { id: 1, name: '1. Ingest & Profile', icon: Upload, desc: 'Exact Header Inspection' },
+    { id: 2, name: '2. Sub-Tab Filter', icon: Filter, desc: 'Human Sheet Toggles' },
+    { id: 3, name: '3. LLM Mapping', icon: Grid, desc: 'Human Column Selectors' },
+    { id: 4, name: '4. Status Normalization', icon: Tag, desc: 'Human Status Selectors' },
+    { id: 5, name: '5. Order Reconciliation', icon: DollarSign, desc: '3-Way Net Payouts' },
+    { id: 6, name: '6. AI Exceptions & Q&A', icon: MessageSquare, desc: 'Governance Queue & Chat' },
   ];
 
   return (
@@ -48,7 +48,7 @@ export default function PipelineStepper({ currentStep, setStep, pendingException
                   <Icon className="w-4 h-4" />
                 </div>
 
-                {step.id === 5 && pendingExceptionsCount > 0 && (
+                {step.id === 6 && pendingExceptionsCount > 0 && (
                   <span className="px-1.5 py-0.5 rounded-full text-[9px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
                     <AlertTriangle className="w-2.5 h-2.5" />
                     {pendingExceptionsCount}

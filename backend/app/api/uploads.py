@@ -3,6 +3,7 @@ import time
 import json
 from typing import Optional, List, Dict, Any, Tuple
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.database.repositories import FinanceRepository
@@ -11,6 +12,16 @@ from app.agents.nodes import ingest_node, sheet_filtering_node, validation_node,
 from app.core.logging import log_stage, set_audit_context, clear_audit_context
 
 router = APIRouter()
+
+# In-Memory Pipeline Execution Store per Batch for Reprocessing & Dynamic Node Inspection
+BATCH_PIPELINE_STORE: Dict[str, Dict[str, Any]] = {}
+
+class ReprocessRequest(BaseModel):
+    start_node: float = 1.5  # 1.5, 2, or 3
+    sheet_overrides: Optional[Dict[str, str]] = {}  # { "filename": "KEEP" | "EXCLUDE" }
+    column_mapping_overrides: Optional[Dict[str, Dict[str, str]]] = {}  # { "filename": { "canonical_field": "src_col" } }
+    status_mapping_overrides: Optional[Dict[str, str]] = {}  # { "raw_status": "Canonical Category" }
+
 
 @router.post("/batches")
 async def create_and_process_batch(
@@ -236,6 +247,30 @@ async def create_and_process_batch(
     repo.update_batch_status(batch_id, "NODE_5_RECONCILED", processed_records=total_records, processing_time_ms=processing_time_ms)
     repo.log_audit_event(batch_id, "STAGE_COMPLETE", "NODE_5_RECONCILIATION", f"Node 5 complete. Reconciliation Match Rate: {node5_result.get('match_rate', 0.0)}%")
 
+    # Store Execution Context in BATCH_PIPELINE_STORE for Node Inspection & Human Reprocessing
+    sheet_profiles_json = []
+    for sp in node1_result.get("sheet_profiles", []):
+        if hasattr(sp, "dict"):
+            sheet_profiles_json.append(sp.dict())
+        elif isinstance(sp, dict):
+            sheet_profiles_json.append(sp)
+
+    BATCH_PIPELINE_STORE[batch_id] = {
+        "all_raw_datasets": parsed_datasets,
+        "files_info": files_info,
+        "sheet_profiles": sheet_profiles_json,
+        "ai_retained_datasets": essential_datasets,
+        "essential_datasets": essential_datasets,
+        "dropped_datasets": filtering_result.get("dropped_datasets", []),
+        "column_mappings": node2_result.get("column_mappings", {}),
+        "status_mappings": node3_result.get("status_mappings", {}),
+        "human_sheet_overrides": {},
+        "human_column_overrides": {},
+        "human_status_overrides": {},
+        "node4_result": node4_result,
+        "node5_result": node5_result
+    }
+
     print("\n" + "="*80)
     print(f"  [NODE 1 ──▶ NODE 1.5 ──▶ NODE 2 ──▶ NODE 3 ──▶ NODE 4 ──▶ NODE 5 CHAIN COMPLETE]")
     print(f"  [BATCH ID] {batch_id}")
@@ -261,6 +296,232 @@ async def create_and_process_batch(
         "classified_credits_count": node4_result.get("classified_credits_count", 0),
         "match_rate": node5_result.get("match_rate", 0.0),
         "processing_time_ms": round(processing_time_ms, 2)
+    }
+
+
+@router.get("/batches/{batch_id}/node-details")
+def get_batch_node_details(batch_id: str, db: Session = Depends(get_db)):
+    """
+    Returns node inspection details for Node 1, Node 1.5, Node 2, Node 3, and active human overrides.
+    """
+    if batch_id not in BATCH_PIPELINE_STORE:
+        # Fallback empty profile if batch not in RAM
+        return {
+            "batch_id": batch_id,
+            "node1": {"sheet_profiles": []},
+            "node1_5": {"retained_datasets": [], "dropped_datasets": []},
+            "node2": {"column_mappings": {}},
+            "node3": {"status_mappings": {}},
+            "human_overrides": {"sheet_overrides": {}, "column_overrides": {}, "status_overrides": {}}
+        }
+
+    store = BATCH_PIPELINE_STORE[batch_id]
+    
+    # Format retained & dropped for UI display
+    retained_info = []
+    for ds in store.get("essential_datasets", []):
+        fname = ds.get("filename", "")
+        role = ds.get("role", "")
+        rows = ds.get("data", [])
+        headers = [str(k) for k in rows[0].keys() if k != "id"] if rows and isinstance(rows[0], dict) else []
+        retained_info.append({
+            "filename": fname,
+            "role": role,
+            "row_count": len(rows),
+            "col_count": len(headers),
+            "headers": headers,
+            "verdict": "REQUIRED",
+            "rationale": "Retained essential transaction sheet.",
+            "user_override": store["human_sheet_overrides"].get(fname, None)
+        })
+
+    dropped_info = []
+    for ds in store.get("dropped_datasets", []):
+        fname = ds.get("filename", "")
+        dropped_info.append({
+            "filename": fname,
+            "role": ds.get("role", ""),
+            "row_count": ds.get("row_count", 0),
+            "verdict": "NOT_REQUIRED",
+            "rationale": ds.get("rationale", "Dropped non-essential tab."),
+            "user_override": store["human_sheet_overrides"].get(fname, None)
+        })
+
+    return {
+        "batch_id": batch_id,
+        "node1": {
+            "sheet_profiles": store.get("sheet_profiles", [])
+        },
+        "node1_5": {
+            "retained_datasets": retained_info,
+            "dropped_datasets": dropped_info
+        },
+        "node2": {
+            "column_mappings": store.get("column_mappings", {})
+        },
+        "node3": {
+            "status_mappings": store.get("status_mappings", {})
+        },
+        "human_overrides": {
+            "sheet_overrides": store.get("human_sheet_overrides", {}),
+            "column_overrides": store.get("human_column_overrides", {}),
+            "status_overrides": store.get("human_status_overrides", {})
+        }
+    }
+
+
+@router.post("/batches/{batch_id}/reprocess")
+def reprocess_batch_pipeline(
+    batch_id: str,
+    req: ReprocessRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Reprocesses the pipeline from start_node (1.5, 2, or 3) forward using human overrides.
+    """
+    if batch_id not in BATCH_PIPELINE_STORE:
+        raise HTTPException(status_code=404, detail="Batch pipeline execution context not found. Please upload dataset again.")
+        
+    store = BATCH_PIPELINE_STORE[batch_id]
+    set_audit_context(batch_id, db)
+    
+    start_node = req.start_node or 1.5
+    
+    # 1. Update Human Overrides in Store
+    if req.sheet_overrides:
+        store["human_sheet_overrides"].update(req.sheet_overrides)
+    if req.column_mapping_overrides:
+        for fname, col_map in req.column_mapping_overrides.items():
+            if fname not in store["human_column_overrides"]:
+                store["human_column_overrides"][fname] = {}
+            store["human_column_overrides"][fname].update(col_map)
+    if req.status_mapping_overrides:
+        store["human_status_overrides"].update(req.status_mapping_overrides)
+
+    print("\n" + "="*80)
+    print(f"  [HUMAN REPROCESSING ENGINE] RUNNING PIPELINE FROM NODE {start_node} FOR BATCH: {batch_id}")
+    print(f"  • Human Sheet Overrides: {store['human_sheet_overrides']}")
+    print(f"  • Human Column Overrides: {store['human_column_overrides']}")
+    print(f"  • Human Status Overrides: {store['human_status_overrides']}")
+    print("="*80 + "\n")
+
+    log_stage("REPROCESS", f"Starting partial pipeline re-run from Node {start_node} for batch '{batch_id}'")
+
+    # 2. Execute Node 1.5 if start_node <= 1.5
+    all_raw = store["all_raw_datasets"]
+    if start_node <= 1.5:
+        retained = []
+        dropped = []
+        for ds in all_raw:
+            fname = ds.get("filename", "")
+            override = store["human_sheet_overrides"].get(fname)
+            if override == "KEEP":
+                retained.append(ds)
+            elif override == "EXCLUDE":
+                dropped.append({"filename": fname, "role": ds.get("role"), "row_count": len(ds.get("data", [])), "rationale": "Manually excluded by human operator."})
+            else:
+                ai_retained_names = [r.get("filename") for r in store["ai_retained_datasets"]]
+                if fname in ai_retained_names:
+                    retained.append(ds)
+                else:
+                    dropped.append({"filename": fname, "role": ds.get("role"), "row_count": len(ds.get("data", [])), "rationale": "Dropped by SheetRelevanceAgent."})
+        store["essential_datasets"] = retained
+        store["dropped_datasets"] = dropped
+
+    essential_datasets = store.get("essential_datasets", all_raw)
+
+    # 3. Execute Node 2 if start_node <= 2
+    if start_node <= 2:
+        node2_state = {
+            "batch_id": batch_id,
+            "raw_datasets": essential_datasets,
+            "sheet_profiles": store.get("sheet_profiles", [])
+        }
+        node2_result = validation_node(node2_state)
+        col_mappings = node2_result.get("column_mappings", {})
+        store["column_mappings"] = col_mappings
+
+    col_mappings = store.get("column_mappings", {})
+    # Apply Human Column Mapping Overrides
+    for fname, overrides in store["human_column_overrides"].items():
+        if fname in col_mappings:
+            for c_field, src_col in overrides.items():
+                col_mappings[fname][c_field] = {
+                    "source_column": src_col,
+                    "confidence": 1.0,
+                    "rationale": "Overridden by human operator."
+                }
+
+    # 4. Execute Node 3 if start_node <= 3
+    node3_state = {
+        "batch_id": batch_id,
+        "raw_datasets": essential_datasets,
+        "column_mappings": col_mappings
+    }
+    node3_result = normalization_node(node3_state)
+    status_mappings = node3_result.get("status_mappings", {})
+
+    # Apply Human Status Overrides
+    for raw_s, new_cat in store["human_status_overrides"].items():
+        status_mappings[raw_s] = {
+            "canonical_category": new_cat,
+            "confidence": 1.0,
+            "rationale": "Overridden by human operator."
+        }
+
+    canonical_orders = node3_result.get("canonical_orders", [])
+    canonical_payments = node3_result.get("canonical_payments", [])
+
+    # Apply status overrides to canonical models
+    for ord_obj in canonical_orders:
+        raw_d = ord_obj.raw_data or {}
+        for k, v in raw_d.items():
+            if str(v).strip() in store["human_status_overrides"]:
+                ord_obj.status = store["human_status_overrides"][str(v).strip()]
+
+    for pmt_obj in canonical_payments:
+        raw_d = pmt_obj.raw_data or {}
+        for k, v in raw_d.items():
+            if str(v).strip() in store["human_status_overrides"]:
+                pmt_obj.status = store["human_status_overrides"][str(v).strip()]
+
+    store["status_mappings"] = status_mappings
+
+    # 5. Execute Node 4 & Node 5
+    node4_state = {
+        "batch_id": batch_id,
+        "canonical_orders": canonical_orders,
+        "canonical_payments": canonical_payments
+    }
+    node4_result = pattern_detection_node(node4_state)
+
+    canonical_orders = node4_result.get("canonical_orders", [])
+    canonical_payments = node4_result.get("canonical_payments", [])
+
+    repo = FinanceRepository(db)
+    if canonical_orders:
+        repo.save_canonical_orders(batch_id, canonical_orders)
+    if canonical_payments:
+        repo.save_canonical_payments(batch_id, canonical_payments)
+
+    node5_state = {
+        "batch_id": batch_id,
+        "canonical_orders": canonical_orders,
+        "canonical_payments": canonical_payments
+    }
+    node5_result = reconciliation_node(node5_state)
+    store["node5_result"] = node5_result
+
+    repo.update_batch_status(batch_id, "NODE_5_RECONCILED", processed_records=len(canonical_orders))
+    repo.log_audit_event(batch_id, "REPROCESS_COMPLETE", f"NODE_{str(start_node).replace('.', '_')}", f"Reprocessed pipeline from Node {start_node}. Updated Match Rate: {node5_result.get('match_rate', 0.0)}%")
+
+    return {
+        "success": True,
+        "batch_id": batch_id,
+        "start_node": start_node,
+        "match_rate": node5_result.get("match_rate", 0.0),
+        "reconciled_orders_count": len(node5_result.get("reconciliation_results", {}).get("matched", [])),
+        "unsettled_orders_count": len(node5_result.get("reconciliation_results", {}).get("missingInPayment", []))
     }
 
 

@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Navbar from './components/Navbar';
 import AgentMonitorBar from './components/AgentMonitorBar';
 import PipelineStepper from './components/PipelineStepper';
 import TerminalConsole from './components/TerminalConsole';
 import UploadSection from './components/UploadSection';
+import IngestInspectionView from './components/IngestInspectionView';
 import SheetDiscoveryView from './components/SheetDiscoveryView';
 import ColumnMappingView from './components/ColumnMappingView';
+import StatusNormalizationView from './components/StatusNormalizationView';
 import ReconciliationView from './components/ReconciliationView';
 import ExceptionsView from './components/ExceptionsView';
 import FinanceQAChat from './components/FinanceQAChat';
@@ -40,7 +42,11 @@ export default function App() {
   const handleUploadSuccess = async (data) => {
     setActiveBatchId(data.batch_id);
     await fetchBatchData(data.batch_id);
-    setPipelineStep(4); // Advance directly to Step 4: Order Reconciliation
+    setPipelineStep(1); // Inspect extracted data in Step 1 first
+  };
+
+  const handleReprocessSuccess = async (data) => {
+    await fetchBatchData(data.batch_id || activeBatchId);
   };
 
   const handleHardReset = async () => {
@@ -89,7 +95,7 @@ ORD-1010\tCancelled\t200`;
       if (res.ok) {
         setActiveBatchId(data.batch_id);
         await fetchBatchData(data.batch_id);
-        setPipelineStep(4); // Advance to Step 4: Order Reconciliation
+        setPipelineStep(5); // Advance to Step 5: Order Reconciliation
       }
     } catch (err) {
       console.error("Error running synthetic demo:", err);
@@ -136,44 +142,64 @@ ORD-1010\tCancelled\t200`;
         {/* Real-time Streaming Agent Execution Console */}
         <TerminalConsole batchId={activeBatchId} isProcessing={isProcessing} />
 
-        {/* STEP 1: MULTI-FILE INGESTION */}
+        {/* STEP 1: MULTI-FILE INGESTION & DATA PROFILING INSPECTION */}
         {pipelineStep === 1 && (
-          <UploadSection onUploadSuccess={handleUploadSuccess} isProcessing={isProcessing} />
+          <div className="space-y-6">
+            <UploadSection onUploadSuccess={handleUploadSuccess} isProcessing={isProcessing} />
+            {activeBatchId && (
+              <IngestInspectionView batchId={activeBatchId} onNext={() => setPipelineStep(2)} />
+            )}
+          </div>
         )}
 
-        {/* STEP 2: AI SHEET RELEVANCE & SUB-TAB FILTERING */}
+        {/* STEP 2: AI SHEET RELEVANCE & SUB-TAB FILTERING + HUMAN TOGGLES */}
         {pipelineStep === 2 && (
-          <SheetDiscoveryView onNext={() => setPipelineStep(3)} />
-        )}
-
-        {/* STEP 3: LLM COLUMN MAPPING MATRIX */}
-        {pipelineStep === 3 && (
-          <ColumnMappingView onNext={() => setPipelineStep(4)} />
-        )}
-
-        {/* STEP 4: DETERMINISTIC 3-WAY ORDER RECONCILIATION */}
-        {pipelineStep === 4 && (
-          <ReconciliationView reconciliation={reconciliation} />
-        )}
-
-        {/* STEP 5: HUMAN-IN-THE-LOOP GOVERNANCE & EXCEPTIONS */}
-        {pipelineStep === 5 && (
-          <ExceptionsView
-            exceptions={exceptions}
+          <SheetDiscoveryView
             batchId={activeBatchId}
-            onExceptionResolved={() => fetchBatchData(activeBatchId)}
-            onNext={() => setPipelineStep(6)}
+            onNext={() => setPipelineStep(3)}
+            onReprocessSuccess={handleReprocessSuccess}
           />
         )}
 
-        {/* STEP 6: AI FINANCE CONTROLLER Q&A CONSOLE */}
+        {/* STEP 3: LLM COLUMN MAPPING MATRIX + HUMAN DROPDOWNS */}
+        {pipelineStep === 3 && (
+          <ColumnMappingView
+            batchId={activeBatchId}
+            onNext={() => setPipelineStep(4)}
+            onReprocessSuccess={handleReprocessSuccess}
+          />
+        )}
+
+        {/* STEP 4: STATUS NORMALIZATION + HUMAN CATEGORY DROPDOWNS */}
+        {pipelineStep === 4 && (
+          <StatusNormalizationView
+            batchId={activeBatchId}
+            onNext={() => setPipelineStep(5)}
+            onReprocessSuccess={handleReprocessSuccess}
+          />
+        )}
+
+        {/* STEP 5: DETERMINISTIC 3-WAY ORDER RECONCILIATION */}
+        {pipelineStep === 5 && (
+          <ReconciliationView reconciliation={reconciliation} />
+        )}
+
+        {/* STEP 6: AI GOVERNANCE QUEUE & FINANCE Q&A CONSOLE */}
         {pipelineStep === 6 && (
-          <FinanceQAChat batchId={activeBatchId} />
+          <div className="space-y-6">
+            <ExceptionsView
+              exceptions={exceptions}
+              batchId={activeBatchId}
+              onExceptionResolved={() => fetchBatchData(activeBatchId)}
+              onNext={() => {}}
+            />
+            <FinanceQAChat batchId={activeBatchId} />
+          </div>
         )}
       </main>
 
       <footer className="border-t border-slate-200 py-6 text-center text-xs text-slate-500 bg-white font-medium">
-        FINANCE CONTROLLER AI • Hackathon System • Powered by FastAPI, LangGraph & Local LLM (qwen2.5:3b)
+        FINANCE CONTROLLER AI • Enterprise System • Powered by FastAPI, LangGraph & Local LLM (qwen2.5:3b)
       </footer>
     </div>
   );
