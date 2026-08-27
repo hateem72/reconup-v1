@@ -84,6 +84,7 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
             payment_map[order_id] = {
                 "orderId": order_id,
                 "orderDate": order_date,
+                "paymentDate": order_date,
                 "productCode": product_code,
                 "statuses": set([payment_status]),
                 "totalPayment": amount,
@@ -94,6 +95,8 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
             payment_map[order_id]["statuses"].add(payment_status)
             payment_map[order_id]["totalPayment"] += amount
             payment_map[order_id]["qty"] += qty
+            if order_date and not payment_map[order_id]["paymentDate"]:
+                payment_map[order_id]["paymentDate"] = order_date
 
     # 3. Match Master Order Sheet against Multi-Event Payment Map
     matched: List[Dict[str, Any]] = []
@@ -115,6 +118,7 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
             matched.append({
                 "orderId": oid,
                 "orderDate": order["orderDate"],
+                "paymentDate": pm.get("paymentDate", ""),
                 "productDetails": order["sku"] or order["productName"],
                 "qty": order["qty"],
                 "orderSheetStatus": order["orderStatus"],
@@ -136,9 +140,11 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
             missing_in_payment.append({
                 "orderId": oid,
                 "orderDate": order["orderDate"],
+                "paymentDate": "N/A (Unsettled)",
                 "productDetails": order["sku"] or order["productName"],
                 "qty": order["qty"],
                 "orderSheetStatus": order["orderStatus"],
+                "totalPayment": 0.0,
                 "matchStatus": "MISSING_PAYMENT"
             })
 
@@ -149,7 +155,8 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
             joined_status = " + ".join(sorted(list(pm["statuses"])))
             missing_in_order.append({
                 "orderId": oid,
-                "orderDate": pm["orderDate"],
+                "orderDate": "N/A (Historical)",
+                "paymentDate": pm.get("paymentDate", ""),
                 "productDetails": pm["productCode"],
                 "qty": pm["qty"],
                 "paymentStatuses": joined_status,

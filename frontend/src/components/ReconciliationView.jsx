@@ -271,6 +271,9 @@ export default function ReconciliationView({ reconciliation }) {
                 <th className="py-3 px-4">Order ID</th>
                 <th className="py-3 px-4">Status / Event</th>
                 <th className="py-3 px-4">SKU / Product Details</th>
+                <th className="py-3 px-3 text-center">Qty</th>
+                <th className="py-3 px-4 text-center">Order Date</th>
+                <th className="py-3 px-4 text-center">Payment Date</th>
                 <th className="py-3 px-4 text-right">Net Payout (₹)</th>
                 <th className="py-3 px-4 text-center">Match State</th>
               </tr>
@@ -278,7 +281,7 @@ export default function ReconciliationView({ reconciliation }) {
             <tbody className="divide-y divide-slate-100 text-xs font-mono">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400 font-sans font-medium">
+                  <td colSpan={8} className="py-8 text-center text-slate-400 font-sans font-medium">
                     No order settlement records match the active search or status filter.
                   </td>
                 </tr>
@@ -287,6 +290,9 @@ export default function ReconciliationView({ reconciliation }) {
                   const oid = row.orderId || row.order_id || 'N/A';
                   const status = row.orderSheetStatus || row.paymentStatuses || row.status || row.live_order_status || row.eventStatus || 'Delivered';
                   const sku = row.productDetails || row.sku || 'N/A';
+                  const qty = row.qty !== undefined ? row.qty : (row.quantity || 1);
+                  const orderDate = row.orderDate || row.order_date || 'N/A';
+                  const paymentDate = row.paymentDate || row.payment_date || 'N/A';
                   const payout = row.totalPayment !== undefined ? row.totalPayment : (row.netPayout !== undefined ? row.netPayout : (row.amount || 0));
 
                   const isMatched = row.statusType === 'MATCHED';
@@ -301,6 +307,9 @@ export default function ReconciliationView({ reconciliation }) {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-slate-700 truncate max-w-xs">{sku}</td>
+                      <td className="py-3 px-3 text-center font-bold text-slate-800">{qty}</td>
+                      <td className="py-3 px-4 text-center text-slate-600 text-[11px]">{orderDate}</td>
+                      <td className="py-3 px-4 text-center text-slate-600 text-[11px]">{paymentDate}</td>
                       <td className={`py-3 px-4 text-right font-black ${payout < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                         ₹{Number(payout).toFixed(2)}
                       </td>
