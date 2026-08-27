@@ -39,7 +39,9 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
     for row in payment_rows:
         if isinstance(row, dict):
             order_id = str(row.get("orderId", row.get("Order ID", "")) or "").strip()
-            amount = float(row.get("amount", row.get("Payment Amount", 0)) or 0)
+            amt_raw = row.get("amount") if row.get("amount") is not None and str(row.get("amount")).strip() != "" else row.get("settlement_amount", row.get("Payment Amount", row.get("Final Settlement Amount", 0)))
+            from app.finance.normalizer import parse_numeric_amount
+            amount = parse_numeric_amount(amt_raw, default=0.0)
             payment_status = str(row.get("status", row.get("Payment Status", "")) or "").strip()
             qty = int(row.get("qty", row.get("Quantity", 1)) or 1)
             order_date = str(row.get("orderDate", ""))

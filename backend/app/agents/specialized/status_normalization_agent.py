@@ -124,8 +124,19 @@ def normalization_node(state: FinanceState) -> Dict[str, Any]:
                 raw_st = str(r.get(status_col, "")).strip()
                 norm_cat = status_map.get(raw_st, {}).get("canonical_category", raw_st) if isinstance(status_map.get(raw_st), dict) else normalize_status(raw_st)
                 
-                # Sourced exclusively from Payment Settlement Sheet (e.g. Final Settlement Amount)
-                amt_val = parse_numeric_amount(r.get(amount_col, 0.0))
+                # Robust multi-key fallback for payment settlement amount
+                amt_raw = None
+                if amount_col and amount_col in r:
+                    amt_raw = r.get(amount_col)
+                if amt_raw is None or str(amt_raw).strip() == "" or str(amt_raw).lower() == "nan":
+                    for k, v in r.items():
+                        k_lower = str(k).lower()
+                        if any(kw in k_lower for kw in ["settlement", "payout", "final settlement", "sale amount", "amount"]):
+                            if v is not None and str(v).strip() != "" and str(v).lower() != "nan":
+                                amt_raw = v
+                                break
+                
+                amt_val = parse_numeric_amount(amt_raw, default=0.0)
 
                 c_pmt = CanonicalPayment(
                     transaction_id=str(r.get("Transaction ID", r.get("transaction_id", f"pmt-{idx+1}-{oid}"))).strip(),

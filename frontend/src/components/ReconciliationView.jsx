@@ -27,7 +27,7 @@ export default function ReconciliationView({ reconciliation }) {
     ...historicalList.map(m => ({ ...m, statusType: 'HISTORICAL_PAYMENT' }))
   ];
 
-  // Compute Operational Lifecycle Status Counts
+  // Compute Operational Lifecycle Status Counts using orderSheetStatus and paymentStatuses
   const statusCounts = {
     Delivered: 0,
     Cancelled: 0,
@@ -36,9 +36,8 @@ export default function ReconciliationView({ reconciliation }) {
     Other: 0
   };
 
-  // Compute Operational Lifecycle Status Counts
   allRecords.forEach(r => {
-    const rawSt = (r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().trim();
+    const rawSt = (r.orderSheetStatus || r.paymentStatuses || r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().trim();
     if (rawSt.includes('deliver')) {
       statusCounts.Delivered += 1;
     } else if (rawSt.includes('cancel')) {
@@ -55,7 +54,7 @@ export default function ReconciliationView({ reconciliation }) {
   const filteredRecords = allRecords.filter(r => {
     const oid = (r.orderId || r.order_id || '').toLowerCase();
     const pDetails = (r.productDetails || r.sku || '').toLowerCase();
-    const rawSt = (r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase();
+    const rawSt = (r.orderSheetStatus || r.paymentStatuses || r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().trim();
 
     const matchesSearch = oid.includes(searchTerm.toLowerCase()) || pDetails.includes(searchTerm.toLowerCase());
 
@@ -286,9 +285,9 @@ export default function ReconciliationView({ reconciliation }) {
               ) : (
                 filteredRecords.map((row, rIdx) => {
                   const oid = row.orderId || row.order_id || 'N/A';
-                  const status = row.status || row.live_order_status || row.eventStatus || 'DELIVERED';
+                  const status = row.orderSheetStatus || row.paymentStatuses || row.status || row.live_order_status || row.eventStatus || 'Delivered';
                   const sku = row.productDetails || row.sku || 'N/A';
-                  const payout = row.netPayout !== undefined ? row.netPayout : (row.amount || 0);
+                  const payout = row.totalPayment !== undefined ? row.totalPayment : (row.netPayout !== undefined ? row.netPayout : (row.amount || 0));
 
                   const isMatched = row.statusType === 'MATCHED';
                   const isMissingPmt = row.statusType === 'MISSING_PAYMENT';
