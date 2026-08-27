@@ -2,10 +2,9 @@ import time
 import pandas as pd
 from typing import Dict, Any, List
 from app.agents.core.state import FinanceState
-from app.agents.core.logging import log_agent_call
 from app.finance.normalizer import normalize_status, parse_numeric_amount, clean_quantity
 from app.schemas.canonical import CanonicalOrder, CanonicalPayment
-from app.core.logging import log_stage
+from app.core.logging import log_agent_call, log_stage
 
 def llm_normalize_statuses(raw_statuses: List[str]) -> Dict[str, Any]:
     """Uses Ollama qwen2.5:3b to categorize unique raw status strings into canonical lifecycle states."""

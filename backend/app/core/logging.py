@@ -52,3 +52,10 @@ def log_stage(stage: str, message: str, level: str = "info"):
             repo.log_audit_event(batch_id, "LOG", stage.upper(), message)
         except Exception:
             pass
+
+def log_agent_call(agent_name: str, task: str, input_summary: str, output_summary: str, confidence: float, duration_sec: float):
+    """Logs structured AI call execution metrics per requirements."""
+    log_stage("AGENT", f"Agent: {agent_name} | Task: {task}")
+    log_stage("AGENT", f"  Input: {input_summary}")
+    log_stage("AGENT", f"  Output: {output_summary}")
+    log_stage("AGENT", f"  Confidence: {round(confidence, 2)} | Duration: {round(duration_sec, 3)}s | Status: SUCCESS")
