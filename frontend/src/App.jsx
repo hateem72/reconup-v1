@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import AgentMonitorBar from './components/AgentMonitorBar';
 import PipelineStepper from './components/PipelineStepper';
@@ -19,6 +19,18 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [pipelineStep, setPipelineStep] = useState(1);
   const [resetNotification, setResetNotification] = useState('');
+  
+  // Real-time Node Execution State (SSE)
+  const [nodeStates, setNodeStates] = useState({
+    1: 'pending',
+    2: 'pending',
+    3: 'pending',
+    4: 'pending',
+    5: 'pending',
+    6: 'pending'
+  });
+  const [activeNodeMessage, setActiveNodeMessage] = useState('');
+  const eventSourceRef = useRef(null);
 
   const fetchBatchData = async (batchId) => {
     if (!batchId) return;
@@ -39,17 +51,120 @@ export default function App() {
     }
   };
 
-  const handleUploadSuccess = async (data) => {
-    setActiveBatchId(data.batch_id);
-    await fetchBatchData(data.batch_id);
-    setPipelineStep(1); // Inspect extracted data in Step 1 first
+  const startEventStream = (batchId, initialStartNode = 1) => {
+    if (!batchId) return;
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    setIsProcessing(true);
+    
+    // Set initial node states
+    setNodeStates(prev => {
+      const updated = { ...prev };
+      for (let i = 1; i <= 6; i++) {
+        if (i < initialStartNode) {
+          updated[i] = 'completed';
+        } else if (i === initialStartNode) {
+          updated[i] = 'running';
+        } else {
+          updated[i] = 'pending';
+        }
+      }
+      return updated;
+    });
+
+    const es = new EventSource(`/api/batches/${batchId}/stream`);
+    eventSourceRef.current = es;
+
+    es.addEventListener('NODE_START', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const nodeNum = data.node;
+        setNodeStates(prev => ({
+          ...prev,
+          [nodeNum]: 'running'
+        }));
+        setActiveNodeMessage(data.message || data.name || '');
+      } catch (e) {
+        console.error("Error in NODE_START handler:", e);
+      }
+    });
+
+    es.addEventListener('NODE_COMPLETE', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const nodeNum = data.node;
+        setNodeStates(prev => ({
+          ...prev,
+          [nodeNum]: 'completed'
+        }));
+      } catch (e) {
+        console.error("Error in NODE_COMPLETE handler:", e);
+      }
+    });
+
+    es.addEventListener('PIPELINE_COMPLETE', async (event) => {
+      try {
+        setNodeStates({
+          1: 'completed',
+          2: 'completed',
+          3: 'completed',
+          4: 'completed',
+          5: 'completed',
+          6: 'completed'
+        });
+        setActiveNodeMessage('');
+        setIsProcessing(false);
+        await fetchBatchData(batchId);
+        setPipelineStep(5); // Auto-advance to Order Reconciliation upon pipeline completion
+        es.close();
+      } catch (e) {
+        console.error("Error in PIPELINE_COMPLETE handler:", e);
+      }
+    });
+
+    es.addEventListener('PIPELINE_ERROR', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setIsProcessing(false);
+        setActiveNodeMessage(`Error: ${data.error || 'Execution stopped'}`);
+        es.close();
+      } catch (e) {
+        console.error("Error in PIPELINE_ERROR handler:", e);
+      }
+    });
+
+    es.onerror = () => {
+      // Stream closed or completed
+      setIsProcessing(false);
+    };
   };
 
-  const handleReprocessSuccess = async (data) => {
-    await fetchBatchData(data.batch_id || activeBatchId);
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
+
+  const handleUploadSuccess = (data) => {
+    setActiveBatchId(data.batch_id);
+    startEventStream(data.batch_id, 1);
+  };
+
+  const handleReprocessSuccess = (data) => {
+    const bId = data.batch_id || activeBatchId;
+    const sNode = data.start_node ? Math.floor(data.start_node) : 2;
+    startEventStream(bId, sNode);
   };
 
   const handleHardReset = async () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
     setIsProcessing(true);
     try {
       const res = await fetch('/api/reset', { method: 'POST' });
@@ -59,6 +174,8 @@ export default function App() {
         setReconciliation(null);
         setExceptions([]);
         setPipelineStep(1);
+        setNodeStates({ 1: 'pending', 2: 'pending', 3: 'pending', 4: 'pending', 5: 'pending', 6: 'pending' });
+        setActiveNodeMessage('');
         setResetNotification('System Hard Reset complete! Database batches & agent state cleared.');
         setTimeout(() => setResetNotification(''), 4000);
       }
@@ -94,12 +211,10 @@ ORD-1010\tCancelled\t200`;
       const data = await res.json();
       if (res.ok) {
         setActiveBatchId(data.batch_id);
-        await fetchBatchData(data.batch_id);
-        setPipelineStep(5); // Advance to Step 5: Order Reconciliation
+        startEventStream(data.batch_id, 1);
       }
     } catch (err) {
       console.error("Error running synthetic demo:", err);
-    } finally {
       setIsProcessing(false);
     }
   };
@@ -119,7 +234,7 @@ ORD-1010\tCancelled\t200`;
         {resetNotification && (
           <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center justify-between shadow-xs">
             <span>{resetNotification}</span>
-            <button onClick={() => setResetNotification('')} className="text-rose-600 hover:underline">
+            <button onClick={() => setResetNotification('')} className="text-rose-600 hover:underline cursor-pointer">
               Dismiss
             </button>
           </div>
@@ -132,14 +247,16 @@ ORD-1010\tCancelled\t200`;
           droppedSheetsCount={reconciliation ? 12 : 0}
         />
 
-        {/* 6-Stage Interactive Workflow Stepper */}
+        {/* 6-Stage Interactive Workflow Stepper with Real-Time SSE Status */}
         <PipelineStepper
           currentStep={pipelineStep}
           setStep={setPipelineStep}
           pendingExceptionsCount={exceptions.length}
+          nodeStates={nodeStates}
+          activeNodeMessage={activeNodeMessage}
         />
 
-        {/* Real-time Streaming Agent Execution Console */}
+        {/* Real-time Streaming Agent Execution Console (SSE) */}
         <TerminalConsole batchId={activeBatchId} isProcessing={isProcessing} />
 
         {/* STEP 1: MULTI-FILE INGESTION & DATA PROFILING INSPECTION */}

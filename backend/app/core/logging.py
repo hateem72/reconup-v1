@@ -1,6 +1,8 @@
 import sys
+import time
 import logging
 from typing import Optional
+from app.core.events import publish_event
 
 _current_batch_context = {"batch_id": None, "db_session": None}
 
@@ -37,14 +39,24 @@ def setup_logger(name: str = "finance_controller", level: str = "INFO") -> loggi
 logger = setup_logger()
 
 def log_stage(stage: str, message: str, level: str = "info"):
-    """Logs structured stage message to console AND persists to database audit events."""
+    """Logs structured stage message to console, persists to database, and publishes SSE event."""
     extra = {"stage": stage.upper()}
     log_func = getattr(logger, level.lower(), logger.info)
     log_func(message, extra=extra)
 
-    # Automatically persist to DB AuditEventModel if batch context is active
     batch_id = _current_batch_context.get("batch_id")
     db_session = _current_batch_context.get("db_session")
+
+    # Publish real-time SSE event to active stream
+    if batch_id:
+        publish_event(batch_id, "LOG", {
+            "stage": stage.upper(),
+            "message": message,
+            "level": level.lower(),
+            "time": time.time()
+        })
+
+    # Persist to database if db_session active
     if batch_id and db_session:
         try:
             from app.database.repositories import FinanceRepository
@@ -54,8 +66,20 @@ def log_stage(stage: str, message: str, level: str = "info"):
             pass
 
 def log_agent_call(agent_name: str, task: str, input_summary: str, output_summary: str, confidence: float, duration_sec: float):
-    """Logs structured AI call execution metrics per requirements."""
+    """Logs structured AI call execution metrics and emits SSE AGENT_CALL event."""
     log_stage("AGENT", f"Agent: {agent_name} | Task: {task}")
     log_stage("AGENT", f"  Input: {input_summary}")
     log_stage("AGENT", f"  Output: {output_summary}")
     log_stage("AGENT", f"  Confidence: {round(confidence, 2)} | Duration: {round(duration_sec, 3)}s | Status: SUCCESS")
+
+    batch_id = _current_batch_context.get("batch_id")
+    if batch_id:
+        publish_event(batch_id, "AGENT_CALL", {
+            "agent_name": agent_name,
+            "task": task,
+            "input_summary": input_summary,
+            "output_summary": output_summary,
+            "confidence": confidence,
+            "duration_sec": duration_sec,
+            "time": time.time()
+        })
