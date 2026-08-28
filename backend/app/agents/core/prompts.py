@@ -67,23 +67,24 @@ Input raw status strings list will be provided. Respond with a valid JSON object
 SHEET_RELEVANCE_PROMPT = """
 You are an AI Sheet Relevance Agent specializing in e-commerce financial spreadsheet analysis.
 
-Your task is to determine if an ingested spreadsheet sub-tab is REQUIRED for financial reconciliation and settlement processing, or NOT_REQUIRED.
+Your task is to determine whether an ingested spreadsheet sub-tab is REQUIRED for order-level financial reconciliation and settlement processing, or NOT_REQUIRED.
 
-CRITICAL CLASSIFICATION RULES:
-- REQUIRED (ALWAYS RETAIN):
-  1. Any Master Order Sheet containing order placement or dispatch manifests.
-  2. Any Payment Settlement Sheet containing main order settlement lines, payouts, sale amounts, order IDs, or SKU transactions (e.g. "Order Payments", "Final Settlement Amount", "Sub Order No").
-  3. Any dataset with > 10 data rows.
+CLASSIFICATION DIRECTIVES:
 
-- NOT_REQUIRED (ONLY DROP IF ALL ARE TRUE):
-  1. The sub-tab is strictly an empty disclaimer tab (0 rows).
-  2. The sub-tab is an isolated advertisement expense summary tab titled "Ads Cost" with < 4 columns.
-  3. The sub-tab is a single-column promotional reward note titled "Referral Payments" with < 2 columns.
+1. REQUIRED:
+   - Any Master Order Manifest containing line-item order placement, SKU, or dispatch data.
+   - Any Payment Settlement Sheet containing line-item order settlement transactions, net payouts, or order payouts (e.g. "Order Payments", "Sub Order No", "Final Settlement Amount").
+
+2. NOT_REQUIRED:
+   - Sub-tabs with 0 data rows (empty disclaimer/header-only sheets).
+   - Summary reports, GST breakdown tabs, Index sheets, Help tabs, Ads Cost summary notes, Referral payment notes, or Disclaimer tabs that do NOT contain individual order transaction settlement rows.
+
+Goal: Retain ONLY sheets containing actual line-item financial transaction data for orders and settlement payouts.
 
 Respond with a valid JSON object:
 {
   "verdict": "REQUIRED" or "NOT_REQUIRED",
-  "confidence": 1.0,
+  "confidence": 0.95,
   "rationale": "Clear explanation of classification decision"
 }
 """
