@@ -2,14 +2,28 @@ import React, { useState, useEffect } from 'react';
 import { Grid, CheckCircle2, AlertCircle, Bot, ArrowRight, RefreshCw, Play, Code } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
 
-const CANONICAL_FIELDS = [
-  { key: 'order_id', label: 'Order ID / Sub Order No', required: true },
-  { key: 'sku', label: 'SKU / Product ID', required: true },
-  { key: 'quantity', label: 'Item Quantity', required: false },
-  { key: 'status', label: 'Order / Event Status', required: true },
-  { key: 'amount', label: 'Settlement / Dispatched Amount', required: true },
-  { key: 'order_date', label: 'Order / Settlement Date', required: false }
-];
+const getCanonicalFieldsForSheet = (role = '') => {
+  const isPayment = role.toUpperCase().includes('PAYMENT') || role.toUpperCase().includes('SETTLEMENT');
+  if (isPayment) {
+    return [
+      { key: 'order_id', label: 'Order ID / Sub Order No', required: true },
+      { key: 'amount', label: 'Final Settlement Amount (Payout)', required: true },
+      { key: 'status', label: 'Live Order / Event Status', required: true },
+      { key: 'payment_date', label: 'Payment / Settlement Date', required: false },
+      { key: 'sku', label: 'Supplier SKU / Product ID', required: false },
+      { key: 'quantity', label: 'Item Quantity', required: false }
+    ];
+  }
+
+  return [
+    { key: 'order_id', label: 'Order ID / Sub Order No', required: true },
+    { key: 'status', label: 'Live Order Status', required: true },
+    { key: 'order_date', label: 'Order Placement Date', required: false },
+    { key: 'sku', label: 'Supplier SKU / Product ID', required: false },
+    { key: 'product_name', label: 'Product Name / Description', required: false },
+    { key: 'quantity', label: 'Dispatched Quantity', required: false }
+  ];
+};
 
 export default function ColumnMappingView({ batchId, onNext, onReprocessSuccess }) {
   const [nodeDetails, setNodeDetails] = useState(null);
@@ -130,6 +144,7 @@ export default function ColumnMappingView({ batchId, onNext, onReprocessSuccess 
             const sheetProfile = profiles.find(p => p.sheet_name === fname);
             const sourceHeaders = sheetProfile?.exact_headers?.filter(h => h !== 'id') || sheet.headers || [];
             const sheetMapping = mappings[fname] || {};
+            const sheetFields = getCanonicalFieldsForSheet(sheet.role || '');
 
             return (
               <div key={idx} className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-4">
@@ -148,8 +163,12 @@ export default function ColumnMappingView({ batchId, onNext, onReprocessSuccess 
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {CANONICAL_FIELDS.map((cField) => {
-                    const mappedInfo = sheetMapping[cField.key];
+                  {sheetFields.map((cField) => {
+                    const mappedInfo = sheetMapping[cField.key] || (
+                      cField.key === 'payment_date' ? sheetMapping['order_date'] : (
+                        cField.key === 'order_date' ? sheetMapping['payment_date'] : null
+                      )
+                    );
                     const aiSourceCol = mappedInfo?.source_column || 'N/A';
                     const activeOverride = columnOverrides[fname]?.[cField.key];
                     const currentSelected = activeOverride !== undefined ? activeOverride : aiSourceCol;
