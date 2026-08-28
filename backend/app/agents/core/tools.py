@@ -1,7 +1,6 @@
 from typing import Dict, Any, List, Optional
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
-from app.finance.profit_calculator import group_by_sku, calculate_overall_profit
 from app.finance.reconciliation import process_reconciliation
 from app.finance.rule_registry import DEFAULT_KNOWN_RULES
 
@@ -38,14 +37,3 @@ def lookup_payment(order_id: str) -> Dict[str, Any]:
 def get_rule_registry() -> List[Dict[str, Any]]:
     """Fetch all active known and human-approved learned rules from registry."""
     return DEFAULT_KNOWN_RULES
-
-@tool("propose_rule", args_schema=RuleProposalInput)
-def propose_rule(pattern: str, normalized_category: str, financial_effect: str) -> Dict[str, Any]:
-    """Proposes a new learned financial rule for human approval."""
-    return {
-        "pattern": pattern,
-        "normalized_category": normalized_category,
-        "financial_effect": financial_effect,
-        "proposed": True,
-        "requires_human_approval": True
-    }

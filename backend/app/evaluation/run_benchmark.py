@@ -5,7 +5,6 @@ import pandas as pd
 from typing import Dict, Any, List, Tuple
 from app.finance.normalizer import normalize_status
 from app.finance.validator import validate_sales_data
-from app.finance.profit_calculator import group_by_sku, calculate_overall_profit
 from app.finance.reconciliation import process_reconciliation
 from app.finance.exception_detector import evaluate_batch_exceptions, detect_unknown_patterns
 from app.finance.metrics import calculate_batch_metrics
@@ -28,100 +27,87 @@ def generate_synthetic_dataset(num_records: int = 100) -> Tuple[List[Dict[str, A
     payments_raw = [
         ["Header 1", "Header 2"],
         ["Header A", "Header B"],
-        ["Header X", "Header Y"]
-    ] # 3 header rows
+        ["Sub Order No", "Order Date", "SKU", "Live Order Status", "Final Settlement Amount"]
+    ]
 
-    ground_truth_matches = []
-    ground_truth_exceptions = []
+    skus = ["PROJ-CAM-111", "NEWARTICLE650", "LOVEAGR", "SNGLN335", "COMBO-NEWARTICLE"]
+    statuses = ["Delivered", "Delivered", "Delivered", "Return", "Cancelled", "RTO", "Claim"]
 
-    # 1. 85 Clean Matched Records
-    statuses = ["Delivered", "Return", "RTO", "Claim", "Affiliate Fees", "Exchange"]
-    skus = ["PROJ-CAM-111", "NEWARTICLE650", "COMBO-NEWARTICLE", "LOVEAGR", "SNGLN335"]
-
-    for i in range(1, 86):
-        oid = f"ORD-{1000 + i}"
+    for i in range(1, num_records + 1):
+        order_id = f"ORD-{1000 + i}"
         sku = skus[i % len(skus)]
-        st = statuses[i % len(statuses)]
+        status = statuses[i % len(statuses)]
         qty = 1
-        amt = 250.0 if st == "Delivered" else (-50.0 if st == "Return" else (100.0 if st == "Claim" else 0.0))
 
-        orders_raw.append({
-            "Sub Order No": oid,
-            "Order Date": "2026-08-01",
-            "Product Name": f"Product {sku}",
-            "SKU": sku,
-            "Quantity": qty,
-            "Reason for Credit Entry": st
-        })
-
-        payments_raw.append([
-            oid, "2026-08-01", "2026-08-01", "", sku, "", "", st, "", "", qty, "", "", amt
-        ])
-        ground_truth_matches.append(oid)
-
-    # 2. 5 Missing Payments (Order exists, Payment missing)
-    for i in range(86, 91):
-        oid = f"ORD-{1000 + i}"
-        sku = skus[i % len(skus)]
-        orders_raw.append({
-            "Sub Order No": oid,
-            "Order Date": "2026-08-01",
-            "Product Name": f"Product {sku}",
-            "SKU": sku,
-            "Quantity": 1,
-            "Reason for Credit Entry": "Delivered"
-        })
-        ground_truth_exceptions.append({"orderId": oid, "type": "MISSING_PAYMENT"})
-
-    # 3. 3 Unknown Deductions ("Return Assurance Fee")
-    for i in range(91, 94):
-        oid = f"ORD-{1000 + i}"
-        sku = skus[i % len(skus)]
-        orders_raw.append({
-            "Sub Order No": oid,
-            "Order Date": "2026-08-01",
-            "Product Name": f"Product {sku}",
-            "SKU": sku,
-            "Quantity": 1,
-            "Reason for Credit Entry": "Return Assurance Fee"
-        })
-        payments_raw.append([
-            oid, "2026-08-01", "2026-08-01", "", sku, "", "", "Return Assurance Fee", "", "", 1, "", "", -20.0
-        ])
-        ground_truth_exceptions.append({"orderId": oid, "type": "UNKNOWN_DEDUCTION", "pattern": "Return Assurance Fee"})
-
-    # 4. 4 Missing Orders (Payment exists, Order missing)
-    for i in range(94, 98):
-        oid = f"ORD-{1000 + i}"
-        sku = skus[i % len(skus)]
-        payments_raw.append([
-            oid, "2026-08-01", "2026-08-01", "", sku, "", "", "Delivered", "", "", 1, "", "", 180.0
-        ])
-        ground_truth_exceptions.append({"orderId": oid, "type": "MISSING_ORDER"})
-
-    # 5. 3 Amount Mismatches
-    for i in range(98, 101):
-        oid = f"ORD-{1000 + i}"
-        sku = skus[i % len(skus)]
-        orders_raw.append({
-            "Sub Order No": oid,
-            "Order Date": "2026-08-01",
-            "Product Name": f"Product {sku}",
-            "SKU": sku,
-            "Quantity": 1,
-            "Reason for Credit Entry": "Delivered"
-        })
-        payments_raw.append([
-            oid, "2026-08-01", "2026-08-01", "", sku, "", "", "Delivered", "", "", 1, "", "", 150.0 # mismatch from 250
-        ])
-        ground_truth_matches.append(oid)
+        # Base clean record
+        if i <= 85:
+            orders_raw.append({
+                "Sub Order No": order_id,
+                "Reason for Credit Entry": status,
+                "SKU": sku,
+                "Quantity": qty
+            })
+            payments_raw.append([
+                order_id,
+                "2026-03-01",
+                sku,
+                status,
+                250.0 if status == "Delivered" else (-50.0 if status == "Return" else 0.0)
+            ])
+        # 5 Missing payment records (in orders, not in payments)
+        elif i <= 90:
+            orders_raw.append({
+                "Sub Order No": order_id,
+                "Reason for Credit Entry": "Delivered",
+                "SKU": sku,
+                "Quantity": qty
+            })
+        # 3 Amount mismatches
+        elif i <= 93:
+            orders_raw.append({
+                "Sub Order No": order_id,
+                "Reason for Credit Entry": "Delivered",
+                "SKU": sku,
+                "Quantity": qty
+            })
+            payments_raw.append([
+                order_id,
+                "2026-03-01",
+                sku,
+                "Delivered",
+                200.0  # Mismatch (Expected 250)
+            ])
+        # 3 Unknown deduction records
+        elif i <= 96:
+            orders_raw.append({
+                "Sub Order No": order_id,
+                "Reason for Credit Entry": "Return Assurance Fee",
+                "SKU": sku,
+                "Quantity": qty
+            })
+            payments_raw.append([
+                order_id,
+                "2026-03-01",
+                sku,
+                "Return Assurance Fee",
+                -20.0
+            ])
+        # 4 Missing in order records (in payment, missing in orders)
+        else:
+            payments_raw.append([
+                f"ORD-GHOST-{i}",
+                "2026-03-01",
+                sku,
+                "Delivered",
+                250.0
+            ])
 
     ground_truth = {
-        "total_records": 100,
-        "expected_matches": 88,
-        "expected_exceptions": 12,
-        "matched_orders": ground_truth_matches,
-        "exceptions": ground_truth_exceptions
+        "total_orders": len(orders_raw),
+        "total_payments": len(payments_raw) - 3,
+        "expected_matches": 85,
+        "expected_exceptions": 15,
+        "unknown_patterns": ["Return Assurance Fee"]
     }
 
     with open(GROUND_TRUTH_PATH, "w") as f:
@@ -130,18 +116,17 @@ def generate_synthetic_dataset(num_records: int = 100) -> Tuple[List[Dict[str, A
     return orders_raw, payments_raw, ground_truth
 
 
-def run_benchmark() -> Dict[str, Any]:
+def run_benchmark_evaluation() -> Dict[str, Any]:
     """
-    Executes the benchmark evaluation runner and outputs formatted summary.
+    Executes benchmark run and asserts match precision, recall, and speed.
     """
-    start_time = time.time()
-
     orders_raw, payments_raw, ground_truth = generate_synthetic_dataset(100)
+    
+    start_time = time.time()
 
     # Reconcile records
     reconciliation_res = process_reconciliation(orders_raw, payments_raw)
     
-    # Calculate profit
     flat_sales_data = []
     for o in orders_raw:
         flat_sales_data.append({
@@ -150,9 +135,6 @@ def run_benchmark() -> Dict[str, Any]:
             "amount": 250.0 if o["Reason for Credit Entry"] == "Delivered" else 0.0,
             "quantity": o["Quantity"]
         })
-    grouped = group_by_sku(flat_sales_data)
-    costs = {"PROJ-CAM-111": 33, "NEWARTICLE650": 28, "LOVEAGR": 15, "SNGLN335": 38, "COMBO-NEWARTICLE": 53}
-    profit_res = calculate_overall_profit(grouped, costs)
 
     # Detect exceptions
     exceptions = evaluate_batch_exceptions(flat_sales_data, reconciliation_res)
@@ -191,9 +173,10 @@ Throughput:             {throughput} records/sec
 """
     print(output)
     
-    metrics = calculate_batch_metrics("batch_synthetic_100", 100, reconciliation_res, exceptions, profit_res, processing_time_ms)
+    metrics = calculate_batch_metrics("batch_synthetic_100", 100, reconciliation_res, exceptions, processing_time_ms)
     metrics["output_text"] = output
     return metrics
 
+
 if __name__ == "__main__":
-    run_benchmark()
+    run_benchmark_evaluation()
