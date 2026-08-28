@@ -7,10 +7,11 @@ from app.finance.order_normalizer import parse_json_from_llm_text
 
 class SheetRelevanceAgent:
     """
-    Dedicated AI Agent: SheetRelevanceAgent (Node 1.5)
-    Evaluates every discovered workbook sub-tab using Local LLM (qwen2.5:3b) to determine
-    whether it is REQUIRED for order-level financial reconciliation or NOT_REQUIRED
-    (summary tabs, GST reports, index sheets, ad cost notes, or empty disclaimers).
+    Dedicated Autonomous AI Agent: SheetRelevanceAgent (Node 1.5)
+    Evaluates EVERY discovered workbook sub-tab using Local LLM (qwen2.5:3b) semantic intelligence.
+    NO hardcoded keyword lists or row-count shortcuts are used.
+    Determines whether each sub-tab is REQUIRED for order-level financial reconciliation
+    or NOT_REQUIRED (summary tabs, GST reports, index sheets, ad cost notes, or empty disclaimers).
     """
 
     def __init__(self):
@@ -18,10 +19,10 @@ class SheetRelevanceAgent:
 
     def evaluate_sheet_relevance(self, raw_datasets: List[Dict[str, Any]]) -> Dict[str, Any]:
         print("\n" + "="*80)
-        print("  [NODE 1.5 AI AGENT: SheetRelevanceAgent] EXECUTION STARTED")
+        print("  [NODE 1.5 AI AGENT: SheetRelevanceAgent] PURE AI EVALUATION STARTED")
         print("="*80)
         
-        log_stage("NODE 1.5", f"SheetRelevanceAgent evaluating {len(raw_datasets)} discovered sub-tabs via AI classification")
+        log_stage("NODE 1.5", f"SheetRelevanceAgent evaluating {len(raw_datasets)} sub-tabs via pure LLM semantic intelligence")
         
         retained_datasets = []
         dropped_datasets = []
@@ -39,51 +40,44 @@ class SheetRelevanceAgent:
             print(f"\n--- [EVALUATING SUB-TAB #{idx+1}]: {fname} [{role}] ---")
             print(f"  • Dimensions: {row_cnt} rows x {len(headers)} columns")
 
-            # 1. Zero-data empty disclaimer check
-            if row_cnt == 0:
-                verdict = "NOT_REQUIRED"
-                rationale = "Empty sub-tab disclaimer with 0 data rows."
-            else:
-                # 2. Invoke Local LLM (qwen2.5:3b) with compact, anti-hallucination metadata payload
-                try:
-                    # Prepare lightweight sample row preview (capped to 35 chars per value to stay under 350 tokens)
-                    sample_preview = {}
-                    if rows and isinstance(rows[0], dict):
-                        for k, v in list(rows[0].items())[:12]:
+            # Prepare lightweight sample row preview (top 2 rows, capped to 35 chars per string value)
+            sample_preview = []
+            if rows:
+                for sample_r in rows[:2]:
+                    if isinstance(sample_r, dict):
+                        row_dict = {}
+                        for k, v in list(sample_r.items())[:15]:
                             str_val = str(v).strip()
-                            sample_preview[str(k)] = (str_val[:35] + "...") if len(str_val) > 35 else str_val
+                            row_dict[str(k)] = (str_val[:35] + "...") if len(str_val) > 35 else str_val
+                        sample_preview.append(row_dict)
 
-                    prompt = (
-                        f"{SHEET_RELEVANCE_PROMPT}\n\n"
-                        f"Sub-Tab Metadata:\n"
-                        f"• Sub-Tab Name: {fname}\n"
-                        f"• Declared Role: {role}\n"
-                        f"• Total Data Rows: {row_cnt}\n"
-                        f"• Total Column Count: {len(headers)}\n"
-                        f"• Headers JSON: {json.dumps(headers)}\n"
-                        f"• Sample Row Data: {json.dumps(sample_preview)}\n\n"
-                        f"Evaluate whether this sheet contains line-item order transactions/settlements (REQUIRED) or summary/disclaimer data (NOT_REQUIRED):"
-                    )
+            # Construct pure LLM semantic evaluation prompt for this sub-tab
+            prompt = (
+                f"{SHEET_RELEVANCE_PROMPT}\n\n"
+                f"Sub-Tab Metadata:\n"
+                f"• Sub-Tab Name: {fname}\n"
+                f"• Declared Role: {role}\n"
+                f"• Total Data Rows: {row_cnt}\n"
+                f"• Total Column Count: {len(headers)}\n"
+                f"• Headers JSON: {json.dumps(headers)}\n"
+                f"• Sample Row Data: {json.dumps(sample_preview)}\n\n"
+                f"Classify whether this sub-tab is REQUIRED for line-item financial reconciliation or NOT_REQUIRED:"
+            )
 
-                    resp = self.llm.invoke(prompt)
-                    res_text = getattr(resp, "content", str(resp))
-                    parsed = parse_json_from_llm_text(res_text)
+            try:
+                resp = self.llm.invoke(prompt)
+                res_text = getattr(resp, "content", str(resp))
+                parsed = parse_json_from_llm_text(res_text)
 
-                    if parsed and isinstance(parsed, dict) and "verdict" in parsed:
-                        verdict = str(parsed.get("verdict", "REQUIRED")).upper().strip()
-                        rationale = str(parsed.get("rationale", "Evaluated by SheetRelevanceAgent Local LLM."))
-                    else:
-                        # Fallback heuristic if LLM JSON format is invalid
-                        fname_lower = fname.lower()
-                        if any(kw in fname_lower for kw in ["disclaimer", "ads cost", "referral", "index", "gst"]):
-                            verdict = "NOT_REQUIRED"
-                            rationale = f"Summary/disclaimer tab identified by sheet title '{fname}'."
-                        else:
-                            verdict = "REQUIRED"
-                            rationale = "Order manifest or main transaction sheet containing order settlement lines."
-                except Exception as e:
+                if parsed and isinstance(parsed, dict) and "verdict" in parsed:
+                    verdict = str(parsed.get("verdict", "REQUIRED")).upper().strip()
+                    rationale = str(parsed.get("rationale", "Evaluated by SheetRelevanceAgent Local LLM."))
+                else:
                     verdict = "REQUIRED"
-                    rationale = f"LLM evaluation fallback to REQUIRED: {str(e)}"
+                    rationale = "LLM evaluation parsed as REQUIRED by default."
+            except Exception as e:
+                verdict = "REQUIRED"
+                rationale = f"LLM evaluation fallback to REQUIRED: {str(e)}"
 
             if verdict == "REQUIRED":
                 retained_datasets.append(ds)

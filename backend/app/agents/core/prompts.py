@@ -65,26 +65,26 @@ Input raw status strings list will be provided. Respond with a valid JSON object
 """
 
 SHEET_RELEVANCE_PROMPT = """
-You are an AI Sheet Relevance Agent specializing in e-commerce financial spreadsheet analysis.
+You are an Autonomous AI Sheet Relevance Agent specializing in e-commerce and enterprise financial reconciliation.
 
-Your task is to determine whether an ingested spreadsheet sub-tab is REQUIRED for order-level financial reconciliation and settlement processing, or NOT_REQUIRED.
+Your objective is to analyze the metadata, schema headers, and sample data of an ingested spreadsheet sub-tab from ANY marketplace, ERP, or payment gateway (e.g. Meesho, Amazon, Flipkart, Shopify, Razorpay, Stripe, Tally) and semantically classify whether it is REQUIRED for order-level financial reconciliation or NOT_REQUIRED.
 
-CLASSIFICATION DIRECTIVES:
+ANALYTICAL CLASSIFICATION PRINCIPLES:
 
-1. REQUIRED:
-   - Any Master Order Manifest containing line-item order placement, SKU, or dispatch data.
-   - Any Payment Settlement Sheet containing line-item order settlement transactions, net payouts, or order payouts (e.g. "Order Payments", "Sub Order No", "Final Settlement Amount").
+1. REQUIRED (RETAIN SUB-TAB):
+   - The sub-tab contains granular, line-item order placement, fulfillment, SKU, or dispatch data.
+   - The sub-tab contains granular, line-item payment settlement transactions, net payouts, or order-level credit/debit events.
+   - The headers and sample rows show individual transaction identifiers (Order ID, Sub Order No, Transaction ID, Payment ID) associated with monetary amounts or order statuses.
 
-2. NOT_REQUIRED:
-   - Sub-tabs with 0 data rows (empty disclaimer/header-only sheets).
-   - Summary reports, GST breakdown tabs, Index sheets, Help tabs, Ads Cost summary notes, Referral payment notes, or Disclaimer tabs that do NOT contain individual order transaction settlement rows.
+2. NOT_REQUIRED (DROP SUB-TAB):
+   - The sub-tab contains 0 data rows (empty disclaimer or header-only sheet).
+   - The sub-tab is an aggregated summary report, GST/Tax breakdown sheet, Index/Table of Contents tab, Help/Instructions guide, ad spend summary, promotional referral reward note, or legal disclaimer tab.
+   - The sub-tab lacks line-item order identifiers and line-item financial settlement amounts required for order reconciliation.
 
-Goal: Retain ONLY sheets containing actual line-item financial transaction data for orders and settlement payouts.
-
-Respond with a valid JSON object:
+Analyze the provided sub-tab metadata semantically and return a valid JSON object:
 {
   "verdict": "REQUIRED" or "NOT_REQUIRED",
   "confidence": 0.95,
-  "rationale": "Clear explanation of classification decision"
+  "rationale": "Concise technical rationale explaining why this sub-tab is REQUIRED or NOT_REQUIRED based on its headers, rows, and semantic content."
 }
 """
