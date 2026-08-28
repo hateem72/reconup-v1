@@ -150,6 +150,19 @@ export default function App() {
     };
   }, []);
 
+  const handleUploadStart = () => {
+    setIsProcessing(true);
+    setNodeStates({
+      1: 'running',
+      2: 'pending',
+      3: 'pending',
+      4: 'pending',
+      5: 'pending',
+      6: 'pending'
+    });
+    setActiveNodeMessage('Ingesting & parsing workbook sub-tabs...');
+  };
+
   const handleUploadSuccess = (data) => {
     setActiveBatchId(data.batch_id);
     startEventStream(data.batch_id, 1);
@@ -188,6 +201,16 @@ export default function App() {
 
   const runSyntheticDemo = async () => {
     setIsProcessing(true);
+    setNodeStates({
+      1: 'running',
+      2: 'pending',
+      3: 'pending',
+      4: 'pending',
+      5: 'pending',
+      6: 'pending'
+    });
+    setActiveNodeMessage('Ingesting sample CSV data...');
+
     try {
       const sampleCsv = `Sub Order No\tStatus\tAmount
 ORD-1001\tDelivered\t250
@@ -262,7 +285,11 @@ ORD-1010\tCancelled\t200`;
         {/* STEP 1: MULTI-FILE INGESTION & DATA PROFILING INSPECTION */}
         {pipelineStep === 1 && (
           <div className="space-y-6">
-            <UploadSection onUploadSuccess={handleUploadSuccess} isProcessing={isProcessing} />
+            <UploadSection 
+              onUploadSuccess={handleUploadSuccess} 
+              onUploadStart={handleUploadStart}
+              isProcessing={isProcessing} 
+            />
             {activeBatchId && (
               <IngestInspectionView batchId={activeBatchId} onNext={() => setPipelineStep(2)} />
             )}

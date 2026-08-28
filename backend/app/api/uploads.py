@@ -26,9 +26,9 @@ class ReprocessRequest(BaseModel):
     status_mapping_overrides: Optional[Dict[str, str]] = {}  # { "raw_status": "Canonical Category" }
 
 
-def execute_pipeline_sync(batch_id: str, parsed_datasets: List[Dict[str, Any]], files_info: List[Dict[str, Any]], start_time: float):
+def execute_pipeline_sync(batch_id: str, raw_file_payloads: List[Dict[str, Any]], raw_csv: Optional[str], start_time: float):
     """
-    Executes the full 6-node pipeline synchronously and emits real-time SSE lifecycle events.
+    Executes the full 6-node pipeline synchronously in background thread and emits real-time SSE lifecycle events.
     """
     db = SessionLocal()
     try:
@@ -36,14 +36,56 @@ def execute_pipeline_sync(batch_id: str, parsed_datasets: List[Dict[str, Any]], 
         set_audit_context(batch_id, db)
 
         # ─────────────────────────────────────────────────────────────────────
-        # NODE 1: INGEST & EXACT HEADER PROFILING
+        # NODE 1: INGEST & EXACT HEADER PROFILING (Parsing in background)
         # ─────────────────────────────────────────────────────────────────────
         publish_event(batch_id, "NODE_START", {
             "node": 1,
             "name": "Ingest & Header Profiling",
-            "message": f"Profiling {len(parsed_datasets)} sub-tab datasets and detecting true header rows...",
+            "message": "Parsing workbook sub-tabs and detecting true header rows...",
             "time": time.time()
         })
+
+        files_info = []
+        parsed_datasets: List[Dict[str, Any]] = []
+
+        for item in raw_file_payloads:
+            fname = item["filename"]
+            content = item["content"]
+            role = item["role"]
+            files_info.append({"filename": fname, "size": len(content), "role": role})
+
+            log_stage("INGEST", f"Reading & extracting sheets for '{fname}' [{role}]")
+
+            if fname.endswith(".zip"):
+                zip_res = parse_zip_file(content)
+                if zip_res["success"]:
+                    for f_entry in zip_res.get("files", []):
+                        parsed_datasets.append({"filename": f_entry["filename"], "role": role, "data": f_entry["data"]})
+            elif fname.endswith((".xlsx", ".xls")):
+                res = parse_excel_bytes(content, fname)
+                if res["success"]:
+                    for s in res.get("sheets", []):
+                        parsed_datasets.append({
+                            "filename": f"{fname} [{s['sheet_name']}]",
+                            "role": role,
+                            "data": s["data"],
+                            "header_row_index": s.get("header_row_index", 1),
+                            "exact_headers": s.get("exact_headers", [])
+                        })
+            else:
+                raw_text = content.decode("utf-8", errors="ignore")
+                res = parse_csv_data(raw_text)
+                if res["success"]:
+                    parsed_datasets.append({"filename": fname, "role": role, "data": res["data"], "header_row_index": 1})
+
+        if not raw_file_payloads and raw_csv:
+            res = parse_csv_data(raw_csv)
+            if res["success"]:
+                parsed_datasets.append({"filename": "pasted_clipboard_data.csv", "role": "MASTER ORDER SHEET", "data": res["data"], "header_row_index": 1})
+                files_info.append({"filename": "pasted_clipboard_data.csv", "size": len(raw_csv), "role": "MASTER ORDER SHEET"})
+
+        if not parsed_datasets:
+            raise ValueError("No valid spreadsheet data found in uploaded files.")
 
         node1_state = {
             "batch_id": batch_id,
@@ -300,7 +342,7 @@ async def create_and_process_batch(
     db: Session = Depends(get_db)
 ):
     """
-    Creates a batch and initiates real-time SSE streaming pipeline execution.
+    Creates a batch and initiates non-blocking real-time SSE streaming pipeline execution in ~5ms.
     """
     start_time = time.time()
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
@@ -356,77 +398,25 @@ async def create_and_process_batch(
 
     batch = repo.create_batch(batch_id=batch_id, source_filename=primary_name)
 
-    files_info = []
-    parsed_datasets: List[Dict[str, Any]] = []
+    # Buffer raw file contents quickly into memory
+    raw_file_payloads: List[Dict[str, Any]] = []
 
-    # 1. PROCESS ORDER FILES
     for up_file in order_upload_list:
         fname = up_file.filename or "order_file.csv"
         content = await up_file.read()
-        files_info.append({"filename": fname, "size": len(content), "role": "MASTER ORDER SHEET"})
+        raw_file_payloads.append({"filename": fname, "content": content, "role": "MASTER ORDER SHEET"})
 
-        if fname.endswith(".zip"):
-            zip_res = parse_zip_file(content)
-            if zip_res["success"]:
-                for f_entry in zip_res.get("files", []):
-                    parsed_datasets.append({"filename": f_entry["filename"], "role": "MASTER ORDER SHEET", "data": f_entry["data"]})
-        elif fname.endswith((".xlsx", ".xls")):
-            res = parse_excel_bytes(content, fname)
-            if res["success"]:
-                for s in res.get("sheets", []):
-                    parsed_datasets.append({
-                        "filename": f"{fname} [{s['sheet_name']}]",
-                        "role": "MASTER ORDER SHEET",
-                        "data": s["data"],
-                        "header_row_index": s.get("header_row_index", 1),
-                        "exact_headers": s.get("exact_headers", [])
-                    })
-        else:
-            raw_text = content.decode("utf-8", errors="ignore")
-            res = parse_csv_data(raw_text)
-            if res["success"]:
-                parsed_datasets.append({"filename": fname, "role": "MASTER ORDER SHEET", "data": res["data"], "header_row_index": 1})
-
-    # 2. PROCESS PAYMENT FILES
     for up_file in payment_upload_list:
         fname = up_file.filename or "payment_file.csv"
         content = await up_file.read()
-        files_info.append({"filename": fname, "size": len(content), "role": "PAYMENT SETTLEMENT SHEET"})
+        raw_file_payloads.append({"filename": fname, "content": content, "role": "PAYMENT SETTLEMENT SHEET"})
 
-        if fname.endswith(".zip"):
-            zip_res = parse_zip_file(content)
-            if zip_res["success"]:
-                for f_entry in zip_res.get("files", []):
-                    parsed_datasets.append({"filename": f_entry["filename"], "role": "PAYMENT SETTLEMENT SHEET", "data": f_entry["data"]})
-        elif fname.endswith((".xlsx", ".xls")):
-            res = parse_excel_bytes(content, fname)
-            if res["success"]:
-                for s in res.get("sheets", []):
-                    parsed_datasets.append({
-                        "filename": f"{fname} [{s['sheet_name']}]",
-                        "role": "PAYMENT SETTLEMENT SHEET",
-                        "data": s["data"],
-                        "header_row_index": s.get("header_row_index", 1),
-                        "exact_headers": s.get("exact_headers", [])
-                    })
-        else:
-            raw_text = content.decode("utf-8", errors="ignore")
-            res = parse_csv_data(raw_text)
-            if res["success"]:
-                parsed_datasets.append({"filename": fname, "role": "PAYMENT SETTLEMENT SHEET", "data": res["data"], "header_row_index": 1})
-
-    if not all_upload_files and raw_csv:
-        res = parse_csv_data(raw_csv)
-        if res["success"]:
-            parsed_datasets.append({"filename": "pasted_clipboard_data.csv", "role": "MASTER ORDER SHEET", "data": res["data"], "header_row_index": 1})
-            files_info.append({"filename": "pasted_clipboard_data.csv", "size": len(raw_csv), "role": "MASTER ORDER SHEET"})
-
-    if not parsed_datasets:
+    if not raw_file_payloads and not raw_csv:
         raise HTTPException(status_code=400, detail="Please upload valid Order or Payment spreadsheet files.")
 
-    # Start Asynchronous Pipeline Execution Task
+    # Launch Asynchronous Pipeline Execution in Background Thread
     asyncio.create_task(
-        asyncio.to_thread(execute_pipeline_sync, batch_id, parsed_datasets, files_info, start_time)
+        asyncio.to_thread(execute_pipeline_sync, batch_id, raw_file_payloads, raw_csv, start_time)
     )
 
     return {
@@ -434,7 +424,7 @@ async def create_and_process_batch(
         "status": "PROCESSING",
         "stream_url": f"/api/batches/{batch_id}/stream",
         "source_filename": primary_name,
-        "datasets_count": len(parsed_datasets)
+        "files_count": len(raw_file_payloads)
     }
 
 

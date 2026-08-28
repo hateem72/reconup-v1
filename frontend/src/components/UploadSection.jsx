@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Upload, FileSpreadsheet, FileText, CheckCircle2, ArrowRight, Shield, RefreshCw } from 'lucide-react';
 
-export default function UploadSection({ onUploadSuccess, isProcessing }) {
+export default function UploadSection({ onUploadSuccess, onUploadStart, isProcessing }) {
   const [orderFiles, setOrderFiles] = useState([]);
   const [paymentFiles, setPaymentFiles] = useState([]);
   const [uploadError, setUploadError] = useState('');
@@ -26,6 +26,10 @@ export default function UploadSection({ onUploadSuccess, isProcessing }) {
     }
 
     setUploadError('');
+    if (onUploadStart) {
+      onUploadStart();
+    }
+
     const formData = new FormData();
 
     orderFiles.forEach((file) => {
