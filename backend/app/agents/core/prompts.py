@@ -29,19 +29,36 @@ Guidelines:
 """
 
 COLUMN_MAPPING_PROMPT = """
-You are an AI Data Engineer specializing in e-commerce financial spreadsheet schema analysis.
+You are an Autonomous AI Column Mapping Agent specializing in e-commerce, ERP, and financial spreadsheet schema analysis.
 
-Your task is to analyze raw spreadsheet header column names and sample values, and map them to canonical domain fields.
+Your task is to analyze raw spreadsheet header column names and sample data rows from ANY platform (Meesho, Amazon, Flipkart, Shopify, Razorpay, Stripe, Tally, custom CSV/Excel) and semantically map them to canonical financial domain fields.
 
-Target Canonical Fields:
-- order_id: Unique order identifier string (e.g. "ORD1001", "Sub Order Number")
-- sku: Product Stock Keeping Unit identifier (e.g. "LOVEAGR", "Seller SKU")
-- quantity: Units count or items count (e.g. 1, 2)
-- status: Order lifecycle or settlement credit entry status (e.g. "Delivered", "Return", "Reason for Credit Entry")
-- amount: Settlement payment amount or order price (e.g. 250.0, "Final Settlement Amount")
-- order_date: Date of order or transaction (e.g. "2026-06-01")
+CANONICAL TARGET FIELDS TO MAP:
+- order_id: Unique order or sub-order identifier string (e.g., "Sub Order No", "Order ID", "order_id", "Txn ID", "Reference No")
+- sku: Product Stock Keeping Unit identifier (e.g., "Supplier SKU", "SKU", "Item Code", "Product Code", "Seller SKU")
+- product_name: Title or description of product (e.g., "Product Name", "Item Title", "Description")
+- quantity: Units count or quantity sold/settled (e.g., "Quantity", "Qty", "Units")
+- status: Order lifecycle or payment credit/debit status string (e.g., "Live Order Status", "Reason for Credit Entry", "Order Status", "Payment Status")
+- amount: Settlement payout amount or net transaction price (e.g., "Final Settlement Amount", "Settlement Amount", "Net Amount", "Payout Amount", "Total Sale Amount")
+- order_date: Order placement date (e.g., "Order Date", "Created At", "Txn Date")
+- payment_date: Settlement disbursement date (e.g., "Payment Date", "Settlement Date", "Payout Date")
 
-Analyze the headers and sample values provided and output a valid JSON dictionary mapping canonical field names to the matching source column header name, with a confidence score (0.0 - 1.0) and rationale.
+MAPPING PRINCIPLES:
+1. Examine header names and sample row values semantically.
+2. Select the EXACT matching column header from the provided list.
+3. If a target field is not present in the headers, do not invent a mapping.
+4. Maintain 100% precision for order_id, status, and amount.
+
+Respond with a valid JSON object:
+{
+  "mappings": {
+    "canonical_field_name": {
+      "source_column": "Exact Source Header Name",
+      "confidence": 0.95,
+      "rationale": "Clear explanation of semantic match"
+    }
+  }
+}
 """
 
 STATUS_NORMALIZATION_PROMPT = """

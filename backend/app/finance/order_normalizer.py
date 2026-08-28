@@ -123,14 +123,9 @@ def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet
     except Exception as e:
         log_stage("AGENT", f"LLM mapping exception: {str(e)}", level="warn")
 
-    # Smart Fallback & Safety Filler: Ensure required fields are never omitted if present in headers
-    deterministic = auto_map_payment_columns(headers) if is_payment else auto_map_order_columns(headers)
-    if is_payment and "settlement_amount" in deterministic and "amount" not in deterministic:
-        deterministic["amount"] = deterministic.pop("settlement_amount")
-
     final_mappings = {}
     
-    # 1. Process LLM Mappings as Primary Source of Truth
+    # 1. Process LLM Mappings as 100% Pure Authority
     for c_field, info in llm_mappings.items():
         if isinstance(info, dict) and "source_column" in info:
             src_c = str(info["source_column"]).strip()
@@ -139,7 +134,7 @@ def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet
                 if not is_payment and c_field == "amount":
                     continue
                 conf = info.get("confidence", 0.95)
-                rat = info.get("rationale", f"LLM mapped canonical field '{c_field}' to '{matched}'.")
+                rat = info.get("rationale", f"ColumnMappingAgent LLM mapped canonical field '{c_field}' to '{matched}'.")
                 final_mappings[c_field] = {
                     "source_column": matched,
                     "confidence": float(conf) if conf is not None else 0.95,
@@ -154,21 +149,10 @@ def llm_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], sheet
                 final_mappings[c_field] = {
                     "source_column": matched,
                     "confidence": 0.95,
-                    "rationale": f"LLM mapped canonical field '{c_field}' to '{matched}'."
+                    "rationale": f"ColumnMappingAgent LLM mapped canonical field '{c_field}' to '{matched}'."
                 }
 
-    # 2. Fill missing canonical fields from deterministic mapper if LLM missed them
-    for c_field, src_col in deterministic.items():
-        if c_field not in final_mappings and src_col in headers:
-            if not is_payment and c_field == "amount":
-                continue
-            final_mappings[c_field] = {
-                "source_column": src_col,
-                "confidence": 0.90,
-                "rationale": f"Keyword fallback matched '{src_col}' for field '{c_field}'."
-            }
-
-    log_stage("AGENT", f"ColumnMappingAgent completed with {len(final_mappings)} canonical fields mapped")
+    log_stage("AGENT", f"ColumnMappingAgent completed with {len(final_mappings)} canonical fields mapped via pure LLM intelligence")
     return {"mappings": final_mappings}
 
 
