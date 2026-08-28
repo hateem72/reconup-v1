@@ -1,14 +1,17 @@
 import time
+import hashlib
 import pandas as pd
 from typing import Dict, Any
 from app.agents.core.state import FinanceState
 from app.finance.order_normalizer import llm_map_columns, validate_order_mapping
 from app.core.logging import log_stage, log_agent_call
+from app.core.redis_client import redis_client
+from app.core.config import settings
 
 def validation_node(state: FinanceState) -> Dict[str, Any]:
     """
-    NODE 2: ColumnMappingAgent (Local LLM Ollama qwen2.5:3b) semantically maps raw column
-    headers to canonical domain fields with distinct sub-tab schema caching.
+    NODE 2: ColumnMappingAgent (Local LLM Ollama qwen2.5:3b or Cloud LLM) semantically maps raw column
+    headers to canonical domain fields with Redis-backed schema fingerprint caching.
     100% PURE LLM INTELLIGENCE — Zero hardcoded keyword rules used.
     """
     start_time = time.time()
@@ -22,8 +25,6 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
     log_stage("NODE 2", f"Starting Node 2 LLM Column Mapping for {len(raw_datasets)} essential datasets")
     all_mappings = {}
     validation_results = []
-    
-    schema_cache: Dict[tuple, Dict[str, Any]] = {}
     cache_hits = 0
 
     for idx, ds in enumerate(raw_datasets):
@@ -35,19 +36,26 @@ def validation_node(state: FinanceState) -> Dict[str, Any]:
             continue
 
         headers = ds.get("exact_headers") or [str(k) for k in dict.fromkeys([k for r in rows[:10] for k in r.keys() if k != "id"])]
-        schema_fingerprint = (role, tuple(sorted(headers)))
+        
+        # Build deterministic schema fingerprint cache key
+        headers_str = ",".join(sorted(headers))
+        fingerprint_hash = hashlib.sha256(f"{role}:{headers_str}".encode('utf-8')).hexdigest()[:16]
+        cache_key = f"schema:{role}:{fingerprint_hash}"
 
         print(f"\n--- [NODE 2 AI AGENT MAPPING DATASET #{idx+1}]: {fname} [{role}] ---")
         
-        if schema_fingerprint in schema_cache:
+        # Check Redis Cache (or fallback RAM cache)
+        mapping_result = redis_client.get_json(cache_key)
+        
+        if mapping_result:
             cache_hits += 1
-            mapping_result = schema_cache[schema_fingerprint]
-            print(f"  ⚡ [SCHEMA CACHE HIT]: Headers match previously mapped {role}. Reusing cached AI mapping matrix (0s LLM latency)!")
-            log_stage("NODE 2", f"⚡ Schema Cache Hit for '{fname}': Reusing LLM mapping matrix (0s latency)")
+            engine_name = "REDIS" if redis_client.is_connected else "SCHEMA"
+            print(f"  ⚡ [{engine_name} CACHE HIT]: Headers match previously mapped {role}. Reusing cached AI mapping matrix (0s LLM latency)!")
+            log_stage("NODE 2", f"⚡ {engine_name} Cache Hit for '{fname}': Reusing LLM mapping matrix (0s latency)")
         else:
             log_stage("NODE 2", f"AI Agent ColumnMappingAgent analyzing {len(headers)} headers for '{fname}'")
             mapping_result = llm_map_columns(headers, rows, sheet_role=role)
-            schema_cache[schema_fingerprint] = mapping_result
+            redis_client.set_json(cache_key, mapping_result, ttl_seconds=settings.REDIS_TTL_SECONDS)
 
         mappings = mapping_result.get("mappings", {})
         all_mappings[fname] = mappings
