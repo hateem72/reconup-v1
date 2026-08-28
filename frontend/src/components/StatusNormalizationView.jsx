@@ -59,8 +59,14 @@ export default function StatusNormalizationView({ batchId, onNext, onReprocessSu
           status_mapping_overrides: statusOverrides
         })
       });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({ detail: 'Failed to reprocess from Node 3' }));
+        console.error("Error reprocessing from Node 3:", errJson);
+        alert(errJson.detail || 'Failed to reprocess from Node 3');
+        return;
+      }
       const data = await res.json();
-      if (res.ok && onReprocessSuccess) {
+      if (onReprocessSuccess) {
         await onReprocessSuccess(data);
         onNext();
       }

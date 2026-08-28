@@ -668,7 +668,7 @@ def execute_reprocess_sync(batch_id: str, req_data: Dict[str, Any]):
 
 
 @router.post("/batches/{batch_id}/reprocess")
-def reprocess_batch_pipeline(
+async def reprocess_batch_pipeline(
     batch_id: str,
     req: ReprocessRequest,
     db: Session = Depends(get_db)
@@ -677,7 +677,7 @@ def reprocess_batch_pipeline(
     Reprocesses the pipeline from start_node (1.5, 2, or 3) forward using human overrides.
     """
     if batch_id not in BATCH_PIPELINE_STORE:
-        raise HTTPException(status_code=404, detail="Batch pipeline execution context not found. Please upload dataset again.")
+        raise HTTPException(status_code=404, detail="Batch pipeline execution context not found. Please upload dataset again to initialize pipeline.")
         
     req_dict = req.dict()
     asyncio.create_task(

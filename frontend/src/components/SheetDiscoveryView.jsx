@@ -49,8 +49,14 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
           sheet_overrides: sheetOverrides
         })
       });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({ detail: 'Failed to reprocess from Node 1.5' }));
+        console.error("Error reprocessing from Node 1.5:", errJson);
+        alert(errJson.detail || 'Failed to reprocess from Node 1.5');
+        return;
+      }
       const data = await res.json();
-      if (res.ok && onReprocessSuccess) {
+      if (onReprocessSuccess) {
         await onReprocessSuccess(data);
         onNext();
       }

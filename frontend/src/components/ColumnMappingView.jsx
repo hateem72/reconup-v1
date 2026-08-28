@@ -59,8 +59,14 @@ export default function ColumnMappingView({ batchId, onNext, onReprocessSuccess 
           column_mapping_overrides: columnOverrides
         })
       });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({ detail: 'Failed to reprocess from Node 2' }));
+        console.error("Error reprocessing from Node 2:", errJson);
+        alert(errJson.detail || 'Failed to reprocess from Node 2');
+        return;
+      }
       const data = await res.json();
-      if (res.ok && onReprocessSuccess) {
+      if (onReprocessSuccess) {
         await onReprocessSuccess(data);
         onNext();
       }
