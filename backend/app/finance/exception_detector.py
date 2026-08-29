@@ -20,8 +20,15 @@ def detect_unknown_patterns(records: List[Dict[str, Any]], active_rules: List[Di
     grouped_unknowns: Dict[str, Dict[str, Any]] = {}
 
     for idx, row in enumerate(records):
-        raw_status = str(row.get("Reason for Credit Entry", row.get("status", row.get("rawStatus", ""))) or "").strip()
-        if not raw_status:
+        if hasattr(row, "dict"):
+            row_dict = row.dict()
+        elif isinstance(row, dict):
+            row_dict = row
+        else:
+            row_dict = getattr(row, "__dict__", {})
+
+        raw_status = str(row_dict.get("status", row_dict.get("raw_status", row_dict.get("Reason for Credit Entry", ""))) or "").strip()
+        if not raw_status or raw_status.lower() in ("nan", "null", "none"):
             continue
 
         raw_lower = raw_status.lower()
@@ -35,8 +42,8 @@ def detect_unknown_patterns(records: List[Dict[str, Any]], active_rules: List[Di
         is_unknown_keyword = any(kw in raw_lower for kw in UNKNOWN_POLICY_KEYWORDS)
 
         if not is_known or is_unknown_keyword:
-            amt = float(row.get("amount", row.get("Payment Amount", 0)) or 0)
-            order_id = str(row.get("Sub Order No", row.get("orderId", f"row-{idx}")))
+            amt = float(row_dict.get("settlement_amount", row_dict.get("amount", row_dict.get("Payment Amount", 0))) or 0)
+            order_id = str(row_dict.get("order_id", row_dict.get("Sub Order No", row_dict.get("orderId", f"row-{idx}"))))
 
             if raw_status not in grouped_unknowns:
                 grouped_unknowns[raw_status] = {
