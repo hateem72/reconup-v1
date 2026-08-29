@@ -8,9 +8,11 @@ import IngestInspectionView from './components/IngestInspectionView';
 import SheetDiscoveryView from './components/SheetDiscoveryView';
 import ColumnMappingView from './components/ColumnMappingView';
 import StatusNormalizationView from './components/StatusNormalizationView';
+import StatusIntegrityView from './components/StatusIntegrityView';
 import ReconciliationView from './components/ReconciliationView';
 import ExceptionsView from './components/ExceptionsView';
 import FinanceQAChat from './components/FinanceQAChat';
+import ReportSummaryView from './components/ReportSummaryView';
 
 export default function App() {
   const [activeBatchId, setActiveBatchId] = useState(null);
@@ -20,14 +22,16 @@ export default function App() {
   const [pipelineStep, setPipelineStep] = useState(1);
   const [resetNotification, setResetNotification] = useState('');
   
-  // Real-time Node Execution State (SSE)
+  // Real-time Node Execution State (SSE) across 8 Node Steps
   const [nodeStates, setNodeStates] = useState({
     1: 'pending',
     2: 'pending',
     3: 'pending',
     4: 'pending',
     5: 'pending',
-    6: 'pending'
+    6: 'pending',
+    7: 'pending',
+    8: 'pending'
   });
   const [activeNodeMessage, setActiveNodeMessage] = useState('');
   const eventSourceRef = useRef(null);
@@ -63,7 +67,7 @@ export default function App() {
     // Set initial node states
     setNodeStates(prev => {
       const updated = { ...prev };
-      for (let i = 1; i <= 6; i++) {
+      for (let i = 1; i <= 8; i++) {
         if (i < initialStartNode) {
           updated[i] = 'completed';
         } else if (i === initialStartNode) {
@@ -113,12 +117,14 @@ export default function App() {
           3: 'completed',
           4: 'completed',
           5: 'completed',
-          6: 'completed'
+          6: 'completed',
+          7: 'completed',
+          8: 'completed'
         });
         setActiveNodeMessage('');
         setIsProcessing(false);
         await fetchBatchData(batchId);
-        setPipelineStep(5); // Auto-advance to Order Reconciliation upon pipeline completion
+        setPipelineStep(6); // Auto-advance to Order Reconciliation upon pipeline completion
         es.close();
       } catch (e) {
         console.error("Error in PIPELINE_COMPLETE handler:", e);
@@ -137,7 +143,6 @@ export default function App() {
     });
 
     es.onerror = () => {
-      // Stream closed or completed
       setIsProcessing(false);
     };
   };
@@ -158,7 +163,9 @@ export default function App() {
       3: 'pending',
       4: 'pending',
       5: 'pending',
-      6: 'pending'
+      6: 'pending',
+      7: 'pending',
+      8: 'pending'
     });
     setActiveNodeMessage('Ingesting & parsing workbook sub-tabs...');
   };
@@ -187,7 +194,7 @@ export default function App() {
         setReconciliation(null);
         setExceptions([]);
         setPipelineStep(1);
-        setNodeStates({ 1: 'pending', 2: 'pending', 3: 'pending', 4: 'pending', 5: 'pending', 6: 'pending' });
+        setNodeStates({ 1: 'pending', 2: 'pending', 3: 'pending', 4: 'pending', 5: 'pending', 6: 'pending', 7: 'pending', 8: 'pending' });
         setActiveNodeMessage('');
         setResetNotification('System Hard Reset complete! Database batches & agent state cleared.');
         setTimeout(() => setResetNotification(''), 4000);
@@ -207,7 +214,9 @@ export default function App() {
       3: 'pending',
       4: 'pending',
       5: 'pending',
-      6: 'pending'
+      6: 'pending',
+      7: 'pending',
+      8: 'pending'
     });
     setActiveNodeMessage('Ingesting sample CSV data...');
 
@@ -270,7 +279,7 @@ ORD-1010\tCancelled\t200`;
           droppedSheetsCount={reconciliation ? 12 : 0}
         />
 
-        {/* 6-Stage Interactive Workflow Stepper with Real-Time SSE Status */}
+        {/* 8-Stage Interactive Workflow Stepper with Real-Time SSE Status */}
         <PipelineStepper
           currentStep={pipelineStep}
           setStep={setPipelineStep}
@@ -282,7 +291,7 @@ ORD-1010\tCancelled\t200`;
         {/* Real-time Streaming Agent Execution Console (SSE) */}
         <TerminalConsole batchId={activeBatchId} isProcessing={isProcessing} />
 
-        {/* STEP 1: MULTI-FILE INGESTION & DATA PROFILING INSPECTION */}
+        {/* NODE 1: MULTI-FILE INGESTION & DATA PROFILING INSPECTION */}
         {pipelineStep === 1 && (
           <div className="space-y-6">
             <UploadSection 
@@ -296,7 +305,7 @@ ORD-1010\tCancelled\t200`;
           </div>
         )}
 
-        {/* STEP 2: AI SHEET RELEVANCE & SUB-TAB FILTERING + HUMAN TOGGLES */}
+        {/* NODE 1.5: AI SHEET RELEVANCE & SUB-TAB FILTERING */}
         {pipelineStep === 2 && (
           <SheetDiscoveryView
             batchId={activeBatchId}
@@ -305,7 +314,7 @@ ORD-1010\tCancelled\t200`;
           />
         )}
 
-        {/* STEP 3: LLM COLUMN MAPPING MATRIX + HUMAN DROPDOWNS */}
+        {/* NODE 2: LLM COLUMN MAPPING MATRIX */}
         {pipelineStep === 3 && (
           <ColumnMappingView
             batchId={activeBatchId}
@@ -314,7 +323,7 @@ ORD-1010\tCancelled\t200`;
           />
         )}
 
-        {/* STEP 4: STATUS NORMALIZATION + HUMAN CATEGORY DROPDOWNS */}
+        {/* NODE 3: STATUS NORMALIZATION */}
         {pipelineStep === 4 && (
           <StatusNormalizationView
             batchId={activeBatchId}
@@ -323,22 +332,38 @@ ORD-1010\tCancelled\t200`;
           />
         )}
 
-        {/* STEP 5: DETERMINISTIC 3-WAY ORDER RECONCILIATION */}
+        {/* NODE 4: STATUS INTEGRITY & FEE DEDUCTION AUDIT */}
         {pipelineStep === 5 && (
+          <StatusIntegrityView
+            batchId={activeBatchId}
+            onNext={() => setPipelineStep(6)}
+          />
+        )}
+
+        {/* NODE 5: DETERMINISTIC ORDER RECONCILIATION */}
+        {pipelineStep === 6 && (
           <ReconciliationView reconciliation={reconciliation} />
         )}
 
-        {/* STEP 6: AI GOVERNANCE QUEUE & FINANCE Q&A CONSOLE */}
-        {pipelineStep === 6 && (
+        {/* NODE 6: AI GOVERNANCE QUEUE & FINANCE Q&A CONSOLE */}
+        {pipelineStep === 7 && (
           <div className="space-y-6">
             <ExceptionsView
               exceptions={exceptions}
               batchId={activeBatchId}
               onExceptionResolved={() => fetchBatchData(activeBatchId)}
-              onNext={() => {}}
+              onNext={() => setPipelineStep(8)}
             />
             <FinanceQAChat batchId={activeBatchId} />
           </div>
+        )}
+
+        {/* NODE 7: EXECUTIVE AUDITED REPORT & EXPORT KPIS */}
+        {pipelineStep === 8 && (
+          <ReportSummaryView
+            batchId={activeBatchId}
+            reconciliation={reconciliation}
+          />
         )}
       </main>
 

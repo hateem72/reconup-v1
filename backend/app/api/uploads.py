@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session
 from app.database.database import get_db, SessionLocal
 from app.database.repositories import FinanceRepository
 from app.finance.parser import parse_csv_data, parse_excel_bytes, parse_zip_file
-from app.agents.nodes import ingest_node, sheet_filtering_node, validation_node, normalization_node, pattern_detection_node, reconciliation_node
+from app.agents.nodes import (
+    ingest_node, 
+    sheet_filtering_node, 
+    validation_node, 
+    normalization_node, 
+    pattern_detection_node, 
+    reconciliation_node,
+    exception_analysis_node,
+    report_node
+)
 from app.core.logging import log_stage, set_audit_context, clear_audit_context
 from app.core.events import publish_event, event_stream_generator
 
@@ -288,9 +297,69 @@ def execute_pipeline_sync(batch_id: str, raw_file_payloads: List[Dict[str, Any]]
             "time": time.time()
         })
 
+        # ─────────────────────────────────────────────────────────────────────
+        # NODE 6: AI EXCEPTION GOVERNANCE & Q&A
+        # ─────────────────────────────────────────────────────────────────────
+        publish_event(batch_id, "NODE_START", {
+            "node": 7,
+            "node_key": "node6",
+            "name": "AI Exceptions & Governance",
+            "message": "Evaluating batch exceptions and surfacing governance cards...",
+            "time": time.time()
+        })
+
+        node6_state = {
+            "batch_id": batch_id,
+            "normalized_records": canonical_orders,
+            "reconciliation_results": node5_result.get("reconciliation_results", {})
+        }
+        node6_result = exception_analysis_node(node6_state)
+        exceptions_list = node6_result.get("exceptions", [])
+        if exceptions_list:
+            repo.save_exceptions(batch_id, exceptions_list)
+
+        publish_event(batch_id, "NODE_COMPLETE", {
+            "node": 7,
+            "node_key": "node6",
+            "name": "AI Exceptions & Governance",
+            "summary": f"Surfaced {len(exceptions_list)} governance items",
+            "exceptions_count": len(exceptions_list),
+            "time": time.time()
+        })
+
+        # ─────────────────────────────────────────────────────────────────────
+        # NODE 7: AUDITED EXECUTIVE REPORT GENERATION
+        # ─────────────────────────────────────────────────────────────────────
+        publish_event(batch_id, "NODE_START", {
+            "node": 8,
+            "node_key": "node7",
+            "name": "Executive Report Generation",
+            "message": "Synthesizing executive KPIs & audited report...",
+            "time": time.time()
+        })
+
+        node7_state = {
+            "batch_id": batch_id,
+            "parsed_orders": canonical_orders,
+            "reconciliation_results": node5_result.get("reconciliation_results", {}),
+            "exceptions": exceptions_list,
+            "processing_time_ms": processing_time_ms
+        }
+        node7_result = report_node(node7_state)
+        final_rep = node7_result.get("final_report", {})
+        repo.save_report(batch_id, "PROFIT_AND_RECONCILIATION", final_rep.get("metrics", {}), final_rep.get("summary", {}), final_rep.get("skuBreakdown", {}))
+
+        publish_event(batch_id, "NODE_COMPLETE", {
+            "node": 8,
+            "node_key": "node7",
+            "name": "Executive Report Generation",
+            "summary": f"Executive Report Generated: Match Rate {node5_result.get('match_rate', 0.0)}%",
+            "time": time.time()
+        })
+
         publish_event(batch_id, "PIPELINE_COMPLETE", {
             "batch_id": batch_id,
-            "status": "NODE_5_RECONCILED",
+            "status": "NODE_7_COMPLETED",
             "match_rate": node5_result.get("match_rate", 0.0),
             "retained_sheets_count": len(essential_datasets),
             "canonical_orders_count": len(canonical_orders),
