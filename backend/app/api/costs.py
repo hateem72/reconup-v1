@@ -4,8 +4,6 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.database.repositories import FinanceRepository
-from app.finance.profit_calculator import group_by_sku, calculate_overall_profit
-from app.finance.metrics import calculate_batch_metrics
 
 router = APIRouter()
 
@@ -50,58 +48,8 @@ def save_sku_costs(req: SaveCostsRequest, db: Session = Depends(get_db)):
             "total_unit_cost": sc.cost_price + sc.packaging_cost
         })
 
-    recalculated_report = None
-    # Recalculate profit for batch if batch_id provided
-    if req.batch_id:
-        report = repo.get_latest_report(req.batch_id)
-        if report:
-            db_costs = repo.get_sku_costs_map()
-            # If report summary exists, recalculate overall profit using updated costs
-            summary_json = report.summary_json or {}
-            # Fetch reconciliation
-            reconciliations = repo.get_reconciliation_results(req.batch_id)
-            exceptions = repo.get_exceptions(req.batch_id)
-
-            # Recalculate using active SKU breakdowns
-            sku_breakdown = dict(report.sku_breakdown_json or {})
-            total_profit = 0.0
-            total_cost = 0.0
-
-            for sku_id, b in sku_breakdown.items():
-                unit_cost = db_costs.get(sku_id, b.get("costPerUnit", 0.0))
-                del_count = b.get("deliveredCount", 0)
-                can_count = b.get("cancelledCount", 0)
-                sku_total_cost = (del_count + can_count) * unit_cost
-                
-                # Recalculate profit: (Sales + Cancelled) - ReturnPenalty - TotalCost + Claim - Affiliate + Exchange
-                final_profit = (b.get("deliveredSales", 0) + b.get("cancelledSales", 0)) - b.get("returnPenalty", 0) - sku_total_cost + b.get("claim", 0) - b.get("affiliateFees", 0) + b.get("exchange", 0)
-                
-                b["costPerUnit"] = round(unit_cost, 4)
-                b["totalCost"] = round(sku_total_cost, 4)
-                b["finalProfit"] = round(final_profit, 4)
-                b["isProfitable"] = final_profit > 0
-                
-                total_profit += final_profit
-                total_cost += sku_total_cost
-
-            summary_json["totalProfit"] = round(total_profit, 4)
-            summary_json["totalCost"] = round(total_cost, 4)
-            summary_json["isProfitable"] = total_profit > 0
-
-            # Save updated report
-            metrics = {
-                "match_rate": report.match_rate,
-                "resolved_exceptions": report.resolved_count,
-                "unresolved_exceptions": report.unresolved_count,
-                "total_profit": round(total_profit, 4),
-                "total_revenue": report.total_revenue,
-                "total_deductions": report.total_deductions
-            }
-            recalculated_report = repo.save_report(req.batch_id, "PROFIT_AND_RECONCILIATION", metrics, summary_json, sku_breakdown)
-
     return {
         "success": True,
         "saved_skus": len(saved),
-        "saved": saved,
-        "batch_recalculated": req.batch_id is not None
+        "saved": saved
     }
