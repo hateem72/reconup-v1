@@ -37,3 +37,13 @@ def lookup_payment(order_id: str) -> Dict[str, Any]:
 def get_rule_registry() -> List[Dict[str, Any]]:
     """Fetch all active known and human-approved learned rules from registry."""
     return DEFAULT_KNOWN_RULES
+
+@tool("propose_rule", args_schema=RuleProposalInput)
+def propose_rule(pattern: str, normalized_category: str, financial_effect: str = "SUBTRACT") -> Dict[str, Any]:
+    """Propose a new rule for an unknown deduction pattern for human review."""
+    return {
+        "pattern": pattern,
+        "normalized_category": normalized_category,
+        "financial_effect": financial_effect,
+        "status": "PROPOSED"
+    }
