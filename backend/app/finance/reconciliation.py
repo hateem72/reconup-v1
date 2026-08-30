@@ -18,8 +18,6 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
             continue
             
         status = str(row.get("Reason for Credit Entry", row.get("orderStatus", "")) or "").strip()
-        if status.upper() == "CANCELLED":
-            continue
             
         orders.append({
             "orderId": order_id,
@@ -65,17 +63,12 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
         if not order_id:
             continue
 
-        if payment_status.upper() == "CANCELLED":
-            continue
-
         # Rule: Blank status goes to Compensation
         if not payment_status:
             compensation_fees.append({
                 "orderId": order_id,
                 "orderDate": order_date,
-                "paymentAmount": amount,
-                "qty": qty,
-                "rawRow": row
+                "amount": amount
             })
             continue
 
@@ -105,11 +98,16 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
     count_delivered = 0
     count_returns = 0
     count_rto = 0
+    count_cancelled = 0
 
     order_map = {}
     for order in orders:
         oid = order["orderId"]
         order_map[oid] = order
+        ord_st_upper = str(order["orderStatus"]).upper()
+
+        if "CANCELLED" in ord_st_upper or "CANCELED" in ord_st_upper:
+            count_cancelled += 1
 
         if oid in payment_map:
             pm = payment_map[oid]
@@ -182,7 +180,8 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
         "matchRate": round(match_rate, 2),
         "countDelivered": count_delivered,
         "countReturns": count_returns,
-        "countRTO": count_rto
+        "countRTO": count_rto,
+        "countCancelled": count_cancelled
     }
 
 
