@@ -2,38 +2,13 @@ import React, { useState } from 'react';
 import { AlertTriangle, CheckCircle2, ShieldAlert, Bot, DollarSign, ArrowRight, Code } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
 
-export default function ExceptionsView({ exceptions, batchId, onExceptionResolved, onNext }) {
-  const [approvingId, setApprovingId] = useState(null);
+export default function ExceptionsView({ exceptions, batchId, onNext }) {
   const [showJsonModal, setShowJsonModal] = useState(false);
-
-  const handleApproveRule = async (rulePattern) => {
-    setApprovingId(rulePattern);
-    try {
-      const res = await fetch('/api/rules/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rule_id: `rule-${rulePattern}`,
-          pattern: rulePattern,
-          normalized_category: 'Return Assurance Fee Deduction',
-          financial_effect: 'SUBTRACT',
-          auto_apply: true
-        })
-      });
-      if (res.ok && onExceptionResolved) {
-        onExceptionResolved();
-      }
-    } catch (err) {
-      console.error("Error approving rule:", err);
-    } finally {
-      setApprovingId(null);
-    }
-  };
 
   return (
     <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
       <RawJsonModal
-        title="Node 7 Human Governance & Exception Queue"
+        title="Node 6 Human Governance & Exception Queue"
         data={{ batch_id: batchId, total_exceptions: exceptions.length, exceptions: exceptions }}
         isOpen={showJsonModal}
         onClose={() => setShowJsonModal(false)}
@@ -45,9 +20,9 @@ export default function ExceptionsView({ exceptions, batchId, onExceptionResolve
             <Bot className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-base font-extrabold text-slate-900">Step 6: Human-in-the-Loop Financial Governance</h2>
+            <h2 className="text-base font-extrabold text-slate-900">Node 6: Exception Governance & Risk Queue</h2>
             <p className="text-xs text-slate-500 font-medium">
-              Autonomous Agent <strong className="text-amber-800">ExceptionInvestigationAgent</strong> surfaced unresolved items for human approval
+              Autonomous Agent <strong className="text-amber-800">ExceptionInvestigationAgent</strong> surfaced unresolved exceptions for review
             </p>
           </div>
         </div>
@@ -65,6 +40,16 @@ export default function ExceptionsView({ exceptions, batchId, onExceptionResolve
           <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-800 border border-amber-200">
             Governance Queue
           </span>
+
+          {onNext && (
+            <button
+              onClick={onNext}
+              className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Node 7 Report</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -85,22 +70,19 @@ export default function ExceptionsView({ exceptions, batchId, onExceptionResolve
                     {exc.exception_type || 'FINANCIAL ANOMALY'}
                   </span>
                   <span className="text-xs font-extrabold text-slate-900">
-                    {exc.pattern || exc.description || 'Unidentified Fee Deduction Pattern'}
+                    {exc.pattern || exc.order_id || 'Unidentified Fee Deduction Pattern'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 font-medium">
-                  {exc.llm_explanation || exc.rationale || 'Surfaced line items require human confirmation before P&L finalization.'}
+                  {exc.description || exc.llm_explanation || exc.rationale || 'Surfaced exception item identified for governance review.'}
                 </p>
               </div>
 
-              <button
-                onClick={() => handleApproveRule(exc.pattern || 'Return Assurance Fee')}
-                disabled={approvingId === exc.pattern}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition shrink-0 shadow-xs cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Approve & Apply Standard Rule</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="px-3 py-1.5 rounded-xl text-xs font-mono font-extrabold bg-amber-100 text-amber-900 border border-amber-300">
+                  {exc.amount ? `₹${Math.abs(exc.amount).toFixed(2)} Impact` : 'Governance Item'}
+                </span>
+              </div>
             </div>
           ))
         )}

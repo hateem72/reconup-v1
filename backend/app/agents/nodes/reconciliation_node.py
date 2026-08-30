@@ -59,7 +59,7 @@ def reconciliation_node(state: FinanceState) -> Dict[str, Any]:
         duration_sec=time.time() - start_time
     )
 
-    log_stage("NODE 5", f"Node 5 complete. Match Rate: {match_rate}%. Ready for Node 6 financial P&L calculation.")
+    log_stage("NODE 5", f"Node 5 complete. Match Rate: {match_rate}%. Ready for Node 6 Exception Governance Analysis.")
 
     return {
         "reconciliation_results": rec_res,
