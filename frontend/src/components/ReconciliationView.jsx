@@ -19,11 +19,13 @@ export default function ReconciliationView({ reconciliation }) {
   const rawRec = reconciliation.raw_reconciliation || {};
   const matchedList = rawRec.matched || [];
   const missingInPmtList = rawRec.missingInPayment || [];
+  const cancelledList = rawRec.cancelledOrders || [];
   const historicalList = rawRec.missingInOrder || [];
 
   const allRecords = [
     ...matchedList.map(m => ({ ...m, statusType: 'MATCHED' })),
     ...missingInPmtList.map(m => ({ ...m, statusType: 'MISSING_PAYMENT' })),
+    ...cancelledList.map(m => ({ ...m, statusType: 'CANCELLED' })),
     ...historicalList.map(m => ({ ...m, statusType: 'HISTORICAL_PAYMENT' }))
   ];
 
@@ -61,7 +63,7 @@ export default function ReconciliationView({ reconciliation }) {
     let matchesFilter = true;
     if (statusFilter === 'ALL') {
       matchesFilter = true;
-    } else if (['MATCHED', 'MISSING_PAYMENT', 'HISTORICAL_PAYMENT'].includes(statusFilter)) {
+    } else if (['MATCHED', 'MISSING_PAYMENT', 'CANCELLED', 'HISTORICAL_PAYMENT'].includes(statusFilter)) {
       matchesFilter = r.statusType === statusFilter;
     } else if (statusFilter === 'DELIVERED') {
       matchesFilter = rawSt.includes('deliver');
@@ -297,6 +299,7 @@ export default function ReconciliationView({ reconciliation }) {
 
                   const isMatched = row.statusType === 'MATCHED';
                   const isMissingPmt = row.statusType === 'MISSING_PAYMENT';
+                  const isCancelled = row.statusType === 'CANCELLED';
 
                   return (
                     <tr key={rIdx} className="hover:bg-slate-50/80 transition">
@@ -323,6 +326,11 @@ export default function ReconciliationView({ reconciliation }) {
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                             <AlertTriangle className="w-3 h-3" />
                             UNSETTLED
+                          </span>
+                        ) : isCancelled ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                            <XCircle className="w-3 h-3" />
+                            CANCELLED
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">

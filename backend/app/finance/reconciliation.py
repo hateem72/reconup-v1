@@ -94,6 +94,7 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
     # 3. Match Master Order Sheet against Multi-Event Payment Map
     matched: List[Dict[str, Any]] = []
     missing_in_payment: List[Dict[str, Any]] = []
+    cancelled_orders: List[Dict[str, Any]] = []
     
     count_delivered = 0
     count_returns = 0
@@ -135,16 +136,30 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
 
             pm["processed"] = True
         else:
-            missing_in_payment.append({
-                "orderId": oid,
-                "orderDate": order["orderDate"],
-                "paymentDate": "N/A (Unsettled)",
-                "productDetails": order["sku"] or order["productName"],
-                "qty": order["qty"],
-                "orderSheetStatus": order["orderStatus"],
-                "totalPayment": 0.0,
-                "matchStatus": "MISSING_PAYMENT"
-            })
+            if "CANCELLED" in ord_st_upper or "CANCELED" in ord_st_upper:
+                cancelled_orders.append({
+                    "orderId": oid,
+                    "orderDate": order["orderDate"],
+                    "paymentDate": "N/A (Cancelled)",
+                    "productDetails": order["sku"] or order["productName"],
+                    "qty": order["qty"],
+                    "orderSheetStatus": order["orderStatus"],
+                    "paymentStatuses": "Cancelled (No Payout Expected)",
+                    "totalPayment": 0.0,
+                    "matchStatus": "CANCELLED"
+                })
+            else:
+                missing_in_payment.append({
+                    "orderId": oid,
+                    "orderDate": order["orderDate"],
+                    "paymentDate": "N/A (Unsettled)",
+                    "productDetails": order["sku"] or order["productName"],
+                    "qty": order["qty"],
+                    "orderSheetStatus": order["orderStatus"],
+                    "paymentStatuses": "Unsettled",
+                    "totalPayment": 0.0,
+                    "matchStatus": "MISSING_PAYMENT"
+                })
 
     # Unmatched payment lines referencing historical order IDs not in current Order Sheet
     missing_in_order = []
@@ -167,11 +182,12 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
     matched_count = len(matched)
     match_rate = (matched_count / total_orders * 100.0) if total_orders > 0 else 0.0
 
-    log_stage("RECONCILER", f"Order Sheet Match Result: {matched_count}/{total_orders} matched ({round(match_rate, 2)}% match rate). Found {len(missing_in_order)} historical payment rows.")
+    log_stage("RECONCILER", f"Order Sheet Match Result: {matched_count}/{total_orders} matched ({round(match_rate, 2)}% match rate). Found {len(cancelled_orders)} cancelled orders (no payout expected) and {len(missing_in_order)} historical payment rows.")
 
     return {
         "matched": matched,
         "missingInPayment": missing_in_payment,
+        "cancelledOrders": cancelled_orders,
         "missingInOrder": missing_in_order,
         "compensationFees": compensation_fees,
         "totalOrders": total_orders,
