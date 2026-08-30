@@ -29,7 +29,7 @@ export default function ReconciliationView({ reconciliation }) {
     ...historicalList.map(m => ({ ...m, statusType: 'HISTORICAL_PAYMENT' }))
   ];
 
-  // Compute Operational Lifecycle Status Counts using orderSheetStatus and paymentStatuses
+  // Compute Operational Lifecycle Status Counts using orderSheetStatus and paymentStatuses (EXEMPT HISTORICAL_PAYMENT ROWS)
   const statusCounts = {
     Delivered: 0,
     Cancelled: 0,
@@ -39,6 +39,7 @@ export default function ReconciliationView({ reconciliation }) {
   };
 
   allRecords.forEach(r => {
+    if (r.statusType === 'HISTORICAL_PAYMENT') return; // Exempt historical rows from order counts
     const rawSt = (r.orderSheetStatus || r.paymentStatuses || r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().trim();
     if (rawSt.includes('deliver')) {
       statusCounts.Delivered += 1;
@@ -66,13 +67,13 @@ export default function ReconciliationView({ reconciliation }) {
     } else if (['MATCHED', 'MISSING_PAYMENT', 'CANCELLED', 'HISTORICAL_PAYMENT'].includes(statusFilter)) {
       matchesFilter = r.statusType === statusFilter;
     } else if (statusFilter === 'DELIVERED') {
-      matchesFilter = rawSt.includes('deliver');
+      matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && rawSt.includes('deliver');
     } else if (statusFilter === 'CANCELLED') {
-      matchesFilter = rawSt.includes('cancel');
+      matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && rawSt.includes('cancel');
     } else if (statusFilter === 'RETURN') {
-      matchesFilter = rawSt.includes('return') || rawSt.includes('exchange');
+      matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && (rawSt.includes('return') || rawSt.includes('exchange'));
     } else if (statusFilter === 'RTO') {
-      matchesFilter = rawSt.includes('rto') || rawSt.includes('return to origin');
+      matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && (rawSt.includes('rto') || rawSt.includes('return to origin'));
     }
 
     return matchesSearch && matchesFilter;
