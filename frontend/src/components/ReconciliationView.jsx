@@ -29,7 +29,17 @@ export default function ReconciliationView({ reconciliation }) {
     ...historicalList.map(m => ({ ...m, statusType: 'HISTORICAL_PAYMENT' }))
   ];
 
-  // Compute Operational Lifecycle Status Counts using orderSheetStatus and paymentStatuses (EXEMPT HISTORICAL_PAYMENT ROWS)
+  // Helper function to extract primary lifecycle status respecting Payment Sheet Privilege FIRST
+  const getPrimaryStatusString = (r) => {
+    if (r.effectiveStatus) return r.effectiveStatus.toLowerCase().trim();
+    const pmtSt = r.paymentStatuses || '';
+    if (pmtSt && pmtSt !== 'Unsettled' && !pmtSt.includes('No Payout Expected')) {
+      return pmtSt.toLowerCase().trim();
+    }
+    return (r.orderSheetStatus || r.status || '').toLowerCase().trim();
+  };
+
+  // Compute Operational Lifecycle Status Counts using Payment Sheet Privilege FIRST
   const statusCounts = {
     Delivered: 0,
     Cancelled: 0,
@@ -40,14 +50,14 @@ export default function ReconciliationView({ reconciliation }) {
 
   allRecords.forEach(r => {
     if (r.statusType === 'HISTORICAL_PAYMENT') return; // Exempt historical rows from order counts
-    const rawSt = (r.orderSheetStatus || r.paymentStatuses || r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().trim();
-    if (rawSt.includes('deliver')) {
+    const rawSt = getPrimaryStatusString(r);
+    if (rawSt.includes('deliver') || rawSt.includes('complete') || rawSt.includes('success')) {
       statusCounts.Delivered += 1;
     } else if (rawSt.includes('cancel')) {
       statusCounts.Cancelled += 1;
     } else if (rawSt.includes('rto') || rawSt.includes('return to origin')) {
       statusCounts.RTO += 1;
-    } else if (rawSt.includes('return') || rawSt.includes('exchange')) {
+    } else if (rawSt.includes('return') || rawSt.includes('refund') || rawSt.includes('exchange')) {
       statusCounts.Return += 1;
     } else if (rawSt) {
       statusCounts.Other += 1;
@@ -57,7 +67,7 @@ export default function ReconciliationView({ reconciliation }) {
   const filteredRecords = allRecords.filter(r => {
     const oid = (r.orderId || r.order_id || '').toLowerCase();
     const pDetails = (r.productDetails || r.sku || '').toLowerCase();
-    const rawSt = (r.orderSheetStatus || r.paymentStatuses || r.status || r.live_order_status || r.eventStatus || r.raw_status || '').toLowerCase().trim();
+    const rawSt = getPrimaryStatusString(r);
 
     const matchesSearch = oid.includes(searchTerm.toLowerCase()) || pDetails.includes(searchTerm.toLowerCase());
 
@@ -67,11 +77,11 @@ export default function ReconciliationView({ reconciliation }) {
     } else if (['MATCHED', 'MISSING_PAYMENT', 'CANCELLED', 'HISTORICAL_PAYMENT'].includes(statusFilter)) {
       matchesFilter = r.statusType === statusFilter;
     } else if (statusFilter === 'DELIVERED') {
-      matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && rawSt.includes('deliver');
+      matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && (rawSt.includes('deliver') || rawSt.includes('complete') || rawSt.includes('success'));
     } else if (statusFilter === 'CANCELLED') {
       matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && rawSt.includes('cancel');
     } else if (statusFilter === 'RETURN') {
-      matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && (rawSt.includes('return') || rawSt.includes('exchange'));
+      matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && (rawSt.includes('return') || rawSt.includes('refund') || rawSt.includes('exchange'));
     } else if (statusFilter === 'RTO') {
       matchesFilter = r.statusType !== 'HISTORICAL_PAYMENT' && (rawSt.includes('rto') || rawSt.includes('return to origin'));
     }

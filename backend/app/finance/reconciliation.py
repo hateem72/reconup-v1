@@ -105,22 +105,38 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
     for order in orders:
         oid = order["orderId"]
         order_map[oid] = order
-        ord_st_upper = str(order["orderStatus"]).upper()
-
-        # Master Order Lifecycle Status Classification
-        if "CANCEL" in ord_st_upper:
-            count_cancelled += 1
-        elif "RTO" in ord_st_upper:
-            count_rto += 1
-        elif "RETURN" in ord_st_upper or "EXCHANGE" in ord_st_upper:
-            count_returns += 1
-        else:
-            count_delivered += 1
+        ord_st_upper = str(order.get("orderStatus", "") or "").upper()
 
         if oid in payment_map:
             pm = payment_map[oid]
             joined_status = " + ".join(sorted(list(pm["statuses"])))
-            
+            pm_st_upper = joined_status.upper()
+
+            # Payment Status Privilege Rule: Use Payment Settlement Sheet status FIRST
+            if "CANCEL" in pm_st_upper or "CANCEL" in ord_st_upper:
+                count_cancelled += 1
+                effective_status = "Cancelled"
+            elif "RETURN" in pm_st_upper or "REFUND" in pm_st_upper or "EXCHANGE" in pm_st_upper:
+                count_returns += 1
+                effective_status = "Return"
+            elif "RTO" in pm_st_upper:
+                count_rto += 1
+                effective_status = "RTO"
+            elif "DELIVER" in pm_st_upper or "COMPLETED" in pm_st_upper or "SUCCESS" in pm_st_upper:
+                count_delivered += 1
+                effective_status = "Delivered"
+            else:
+                # Fallback to Master Order Sheet status if Payment status is generic
+                if "RTO" in ord_st_upper:
+                    count_rto += 1
+                    effective_status = "RTO"
+                elif "RETURN" in ord_st_upper or "EXCHANGE" in ord_st_upper:
+                    count_returns += 1
+                    effective_status = "Return"
+                else:
+                    count_delivered += 1
+                    effective_status = "Delivered"
+
             matched.append({
                 "orderId": oid,
                 "orderDate": order["orderDate"],
@@ -129,13 +145,16 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
                 "qty": order["qty"],
                 "orderSheetStatus": order["orderStatus"],
                 "paymentStatuses": joined_status,
+                "effectiveStatus": effective_status,
                 "totalPayment": round(pm["totalPayment"], 4),
                 "matchStatus": "MATCHED"
             })
 
             pm["processed"] = True
         else:
-            if "CANCELLED" in ord_st_upper or "CANCELED" in ord_st_upper:
+            # Unsettled or Cancelled Orders (Fallback to Master Order Sheet status)
+            if "CANCEL" in ord_st_upper:
+                count_cancelled += 1
                 cancelled_orders.append({
                     "orderId": oid,
                     "orderDate": order["orderDate"],
@@ -144,10 +163,21 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
                     "qty": order["qty"],
                     "orderSheetStatus": order["orderStatus"],
                     "paymentStatuses": "Cancelled (No Payout Expected)",
+                    "effectiveStatus": "Cancelled",
                     "totalPayment": 0.0,
                     "matchStatus": "CANCELLED"
                 })
             else:
+                if "RTO" in ord_st_upper:
+                    count_rto += 1
+                    eff_st = "RTO"
+                elif "RETURN" in ord_st_upper or "EXCHANGE" in ord_st_upper:
+                    count_returns += 1
+                    eff_st = "Return"
+                else:
+                    count_delivered += 1
+                    eff_st = "Delivered"
+
                 missing_in_payment.append({
                     "orderId": oid,
                     "orderDate": order["orderDate"],
@@ -156,6 +186,7 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
                     "qty": order["qty"],
                     "orderSheetStatus": order["orderStatus"],
                     "paymentStatuses": "Unsettled",
+                    "effectiveStatus": eff_st,
                     "totalPayment": 0.0,
                     "matchStatus": "MISSING_PAYMENT"
                 })
