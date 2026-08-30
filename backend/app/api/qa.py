@@ -7,6 +7,7 @@ from sqlalchemy import text
 from app.database.database import get_db
 from app.database.repositories import FinanceRepository
 from app.agents.core.llm_factory import get_llm
+from app.agents.core.prompts import TEXT_TO_SQL_SYSTEM_PROMPT, QA_ANSWER_SYNTHESIS_PROMPT
 
 router = APIRouter()
 
@@ -32,31 +33,11 @@ def ask_finance_question(req: QARequest, db: Session = Depends(get_db)):
     q = (req.query or req.question or "").strip()
     batch_id = req.batch_id or "batch_demo"
     
-    # 1. Provide SQLite Database Schema to LLM for Text-to-SQL
-    schema_info = """
-    Database Tables & Schemas:
-    - orders(order_id, sku, product_name, quantity, status, dispatch_date, batch_id)
-    - payments(transaction_id, order_id, sku, status, settlement_amount, transaction_type, batch_id)
-    - reconciliation_results(order_id, match_status, order_status, payment_status, payment_amount, difference, reason, batch_id)
-    - exceptions(record_id, order_id, exception_type, raw_status, amount, description, status, batch_id)
-    - reports(batch_id, match_rate, resolved_count, unresolved_count, summary_json)
-    - rule_registry(pattern, normalized_category, financial_effect, active)
-    """
-
     llm = get_llm(temperature=0.0)
     
-    # 2. Step 1: Text-to-SQL Query Generation
-    sql_prompt = f"""
-System: You are an expert SQLite Text-to-SQL generator for a Finance Reconciliation system.
-Generate ONLY a valid, read-only SQLite SELECT query to answer the user question.
-Filter by batch_id = '{batch_id}' when referencing orders, payments, reconciliation_results, or exceptions tables.
-Return ONLY the SQL query enclosed inside ```sql ... ``` code block. Do not include markdown commentary.
-
-Schema Info:
-{schema_info}
-
-User Question: {q}
-"""
+    # 1. Step 1: Text-to-SQL Query Generation using Centralized System Prompt
+    system_prompt = TEXT_TO_SQL_SYSTEM_PROMPT.format(batch_id=batch_id)
+    sql_prompt = f"{system_prompt}\n\nUser Question: {q}\n"
 
     sql_query = ""
     sql_results: List[Dict[str, Any]] = []
@@ -81,7 +62,7 @@ User Question: {q}
     except Exception as e:
         sql_query = f"-- Query Error: {str(e)}"
 
-    # 3. Fallback: Fetch standard repository summary facts if SQL execution failed or returned empty
+    # 2. Fallback: Fetch standard repository summary facts if SQL execution failed or returned empty
     if not executed_safely or not sql_results:
         batch = repo.get_batch(batch_id)
         report = repo.get_latest_report(batch_id)
@@ -97,18 +78,8 @@ User Question: {q}
             ][:5]
         }]
 
-    # 4. Step 2: Answer Synthesis Grounded on Query Results
-    answer_prompt = f"""
-System: You are an AI Finance Controller Co-Pilot. Answer the user question concisely using ONLY the retrieved database query results below. 
-State exact numbers, order IDs, and monetary values in INR (₹). Never invent or guess missing values.
-
-Retrieved Database Results:
-{sql_results}
-
-User Question: {q}
-
-Answer:
-"""
+    # 3. Step 2: Answer Synthesis Grounded on Query Results using Centralized System Prompt
+    answer_prompt = f"{QA_ANSWER_SYNTHESIS_PROMPT}\n\nRetrieved Database Results:\n{sql_results}\n\nUser Question: {q}\n\nAnswer:\n"
 
     try:
         ans_resp = llm.invoke(answer_prompt)
