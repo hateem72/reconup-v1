@@ -24,15 +24,17 @@ export default function ReportSummaryView({ batchId, reconciliation }) {
     fetchReport();
   }, [batchId]);
 
-  const matchRate = reconciliation?.match_rate || reconciliation?.matchRate || reportData?.metrics?.match_rate || 100.0;
-  const totalSettled = reconciliation?.total_settled || reconciliation?.totalSettled || 0.0;
-  const totalUnsettled = reconciliation?.total_unsettled || reconciliation?.totalUnsettled || 0.0;
-  const netPayout = reconciliation?.net_payout || reconciliation?.netPayout || totalSettled;
+  const rawRec = reconciliation?.raw_reconciliation || reconciliation?.reconciliation_results || reconciliation || {};
 
-  const totalOrders = reconciliation?.totalOrders || reconciliation?.reconciliation_results?.matched?.length || 500;
-  const countDelivered = reconciliation?.countDelivered || 445;
-  const countReturns = (reconciliation?.countReturns || 0) + (reconciliation?.countRTO || 0) || 40;
-  const countCancelled = reconciliation?.countCancelled || 15;
+  const matchRate = rawRec?.matchRate || rawRec?.match_rate || reconciliation?.match_rate || reportData?.metrics?.match_rate || 0.0;
+  const totalSettled = rawRec?.totalSettled || reconciliation?.total_settled || 0.0;
+  const totalUnsettled = rawRec?.totalUnsettled || reconciliation?.total_unsettled || 0.0;
+  const netPayout = rawRec?.netPayout || reconciliation?.net_payout || totalSettled;
+
+  const totalOrders = rawRec?.totalOrders || reconciliation?.total_records || (rawRec?.matched ? rawRec.matched.length : 0);
+  const countDelivered = rawRec?.countDelivered !== undefined ? rawRec.countDelivered : (reconciliation?.countDelivered || 0);
+  const countReturns = rawRec?.countReturns !== undefined ? (rawRec.countReturns + (rawRec.countRTO || 0)) : ((reconciliation?.countReturns || 0) + (reconciliation?.countRTO || 0));
+  const countCancelled = rawRec?.countCancelled !== undefined ? rawRec.countCancelled : (reconciliation?.countCancelled || 0);
 
   const fullPayload = {
     batch_id: batchId,

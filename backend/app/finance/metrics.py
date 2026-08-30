@@ -46,10 +46,14 @@ def calculate_batch_metrics(
 
     return {
         "batch_id": batch_id,
-        "total_records": total_records,
-        "processed_records": total_records,
+        "total_records": total_records or reconciliation_result.get("totalOrders", 0),
+        "processed_records": total_records or reconciliation_result.get("totalOrders", 0),
         "records_matched": matched_count,
         "match_rate": round(match_rate, 2),
+        "count_delivered": reconciliation_result.get("countDelivered", 0),
+        "count_returns": reconciliation_result.get("countReturns", 0),
+        "count_rto": reconciliation_result.get("countRTO", 0),
+        "count_cancelled": reconciliation_result.get("countCancelled", 0),
         "resolved_exceptions": resolved_count,
         "unresolved_exceptions": unresolved_count,
         "exception_categories": category_counts,
