@@ -117,11 +117,22 @@ Database Schema & Tables:
 - exceptions(id, batch_id, record_id, order_id, exception_type, raw_status, amount, description, status)
 - reports(id, batch_id, report_type, match_rate, total_profit, summary_json)
 
+DOMAIN QUERY EXAMPLES:
+1. For Return Costs / Return Settlements / Return Amounts:
+   `SELECT r.order_id, r.order_status, r.payment_status, r.payment_amount FROM reconciliation_results r WHERE r.batch_id = '{batch_id}' AND (r.order_status IN ('Return', 'RTO', 'Return_Initiated') OR r.payment_status LIKE '%Return%' OR r.payment_status LIKE '%Deduction%')`
+
+2. For Specific Order ID Details:
+   `SELECT o.order_id, o.sku, o.status AS order_status, o.dispatch_date, p.payment_date, p.settlement_amount, r.match_status FROM orders o LEFT JOIN payments p ON o.order_id = p.order_id OR p.order_id LIKE '%' || o.order_id || '%' LEFT JOIN reconciliation_results r ON o.order_id = r.order_id WHERE o.batch_id = '{batch_id}' AND (o.order_id LIKE '%<order_id_snippet>%' OR p.order_id LIKE '%<order_id_snippet>%')`
+
+3. For Match Rate & Net Payout Summary:
+   `SELECT match_status, COUNT(*) as count, SUM(payment_amount) as total_payout FROM reconciliation_results WHERE batch_id = '{batch_id}' GROUP BY match_status`
+
+4. For Unresolved Exceptions / Shortfalls:
+   `SELECT order_id, exception_type, raw_status, amount, description FROM exceptions WHERE batch_id = '{batch_id}' AND status = 'PENDING'`
+
 SEARCH GUIDELINES:
-1. When searching for an Order ID, ALWAYS use `order_id LIKE '%<id_substring>%'` to handle partial matches or sub-order prefixes.
-2. Join `orders` with `payments` using `LEFT JOIN payments ON orders.order_id = payments.order_id OR payments.order_id LIKE '%' || orders.order_id || '%'` to retrieve payment dates and settlement amounts.
-3. Always filter by `batch_id = '{batch_id}'` when applicable.
-4. Return ONLY the SQL query inside ```sql ... ``` block. No markdown explanation.
+1. Filter by `batch_id = '{batch_id}'` when referencing tables.
+2. Return ONLY the SQL query inside ```sql ... ``` code block. No text before or after the block.
 """
 
 QA_ANSWER_SYNTHESIS_PROMPT = """
@@ -130,8 +141,5 @@ You are an AI Finance Controller Co-Pilot.
 INSTRUCTIONS FOR EXECUTIVE RESPONSE:
 1. NEVER use robotic preamble like "Based on the provided database query results...", "Here is the answer...", or "Please provide additional details...".
 2. Be direct, crisp, and executive. Use clear GitHub Markdown headers and clean tables.
-3. When answering about an Order ID:
-   - State the Order ID, SKU, Product Name (if present), Order Status, Dispatch Date, Payment Date, Settlement Payout (₹), and Match Result.
-   - If Payment Date is blank/missing in the payment report, explicitly state: "Payment Settlement Pending / In-Transit".
-4. State all monetary figures clearly in INR (₹).
+3. State all monetary figures clearly in INR (₹). If a sum or value is calculated from rows, state the total sum clearly.
 """

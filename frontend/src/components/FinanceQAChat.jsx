@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { MessageSquare, Send, Bot, User, Sparkles, Code, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { MessageSquare, Send, Bot, User, Sparkles, Code, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
 
 // Helper function to render GFM Markdown text and Markdown Tables cleanly
 function FormattedMessage({ text }) {
   if (!text) return null;
 
-  // Split content into blocks (paragraphs vs tables vs code blocks)
   const lines = text.split('\n');
   const blocks = [];
   let inTable = false;
@@ -18,7 +17,6 @@ function FormattedMessage({ text }) {
     // Table row detector
     if (line.startsWith('|') && line.endsWith('|')) {
       inTable = true;
-      // Filter out divider rows like |---|---|
       if (!line.includes('---')) {
         const cells = line.split('|').slice(1, -1).map(c => c.trim());
         tableRows.push(cells);
@@ -66,7 +64,7 @@ function FormattedMessage({ text }) {
                             <span className="font-extrabold text-slate-900">{cell}</span>
                           ) : cell.toLowerCase().includes('delivered') || cell.toLowerCase().includes('exact') ? (
                             <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">{cell}</span>
-                          ) : cell.toLowerCase().includes('shortfall') || cell.toLowerCase().includes('missing') || cell.toLowerCase().includes('pending') ? (
+                          ) : cell.toLowerCase().includes('return') || cell.toLowerCase().includes('shortfall') || cell.toLowerCase().includes('missing') ? (
                             <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">{cell}</span>
                           ) : (
                             cell
@@ -81,14 +79,13 @@ function FormattedMessage({ text }) {
           );
         }
 
-        // Header lines (### or **Header**)
         const isHeader = b.content.startsWith('#') || b.content.startsWith('**');
         const cleanContent = b.content.replace(/^#+\s*/, '').replace(/\*\*/g, '');
 
         if (isHeader) {
           return (
             <h4 key={idx} className="font-extrabold text-slate-900 text-xs mt-2 mb-1 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-blue-600 inline" />
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600 inline" />
               {cleanContent}
             </h4>
           );
@@ -109,17 +106,19 @@ export default function FinanceQAChat({ batchId }) {
   const [messages, setMessages] = useState([
     {
       sender: 'agent',
-      text: 'Hello! I am your AI Finance Controller Assistant. Ask me about specific Order IDs, payout shortfalls, match rates, or financial exception rules.',
-      sql_query: ''
+      text: 'Hello! I am your AI Finance Controller Co-Pilot. Ask me about return costs, specific Order IDs, payout shortfalls, or match rate summaries.',
+      sql_query: '',
+      facts: []
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeSqlModal, setActiveSqlModal] = useState(null);
+  const [activeJsonModal, setActiveJsonModal] = useState(null);
+  const [expandedDebugIdx, setExpandedDebugIdx] = useState(null);
 
   const samplePrompts = [
+    "What are the total return costs?",
     "What is the match rate and total payout?",
-    "Show orders with payment shortfalls",
-    "What are the top 3 unresolved exceptions?"
+    "Show orders with payment shortfalls"
   ];
 
   const handleSend = async (userQuery) => {
@@ -147,6 +146,8 @@ export default function FinanceQAChat({ batchId }) {
             sender: 'agent', 
             text: data.response || data.answer,
             sql_query: data.sql_query,
+            sql_executed_safely: data.sql_executed_safely,
+            facts_count: data.retrieved_facts_count || (data.retrieved_facts ? data.retrieved_facts.length : 0),
             facts: data.retrieved_facts
           }
         ]);
@@ -172,11 +173,11 @@ export default function FinanceQAChat({ batchId }) {
             <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
               Node 6: Interactive Settlement Q&A Co-Pilot
               <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-mono font-bold">
-                Text-to-SQL Active
+                Text-to-SQL & Timeout Protected
               </span>
             </h2>
             <p className="text-xs text-slate-500 font-medium">
-              Ask natural language questions to query database records, order statuses, and settlement payouts
+              Ask natural language questions to query database records, order statuses, and return costs
             </p>
           </div>
         </div>
@@ -207,7 +208,7 @@ export default function FinanceQAChat({ batchId }) {
                 <Bot className="w-4 h-4" />
               </div>
             )}
-            <div className="max-w-2xl space-y-1">
+            <div className="max-w-2xl space-y-1.5">
               <div
                 className={`p-4 rounded-2xl ${
                   m.sender === 'user'
@@ -218,16 +219,34 @@ export default function FinanceQAChat({ batchId }) {
                 <FormattedMessage text={m.text} />
               </div>
 
-              {/* View Generated SQL Button */}
-              {m.sql_query && (
-                <div className="flex items-center gap-2 px-1">
-                  <button
-                    onClick={() => setActiveSqlModal(m.sql_query)}
-                    className="text-[10px] font-mono font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1 cursor-pointer"
-                  >
-                    <Code className="w-3 h-3" />
-                    Inspect Executed SQL Query
-                  </button>
+              {/* Backend Debug Trace Panel */}
+              {m.sender === 'agent' && (m.sql_query || m.facts) && (
+                <div className="rounded-xl border border-slate-200 bg-slate-100/70 p-2 text-[10px]">
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setExpandedDebugIdx(expandedDebugIdx === idx ? null : idx)}
+                      className="font-mono font-bold text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Code className="w-3 h-3 text-indigo-600" />
+                      Backend Debug Trace ({m.facts_count || 0} DB Facts)
+                      {expandedDebugIdx === idx ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+                    {m.facts && (
+                      <button
+                        onClick={() => setActiveJsonModal({ sql_query: m.sql_query, facts: m.facts })}
+                        className="text-slate-500 font-bold hover:text-slate-800 cursor-pointer"
+                      >
+                        Inspect Raw Data
+                      </button>
+                    )}
+                  </div>
+
+                  {expandedDebugIdx === idx && m.sql_query && (
+                    <div className="mt-2 p-2 rounded-lg bg-slate-900 text-slate-100 font-mono text-[10px] overflow-x-auto space-y-1">
+                      <div className="text-emerald-400 font-bold">// Generated Read-Only SQL Query</div>
+                      <div>{m.sql_query}</div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -243,7 +262,7 @@ export default function FinanceQAChat({ batchId }) {
         {isLoading && (
           <div className="flex items-center gap-2 text-indigo-700 text-xs font-mono font-bold p-2 bg-indigo-50 rounded-xl border border-indigo-100 animate-pulse">
             <Sparkles className="w-4 h-4 animate-spin text-indigo-600" />
-            <span>AI Agent generating Text-to-SQL and inspecting database facts...</span>
+            <span>AI Agent executing Text-to-SQL and database query...</span>
           </div>
         )}
       </div>
@@ -252,7 +271,7 @@ export default function FinanceQAChat({ batchId }) {
       <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex gap-2">
         <input
           type="text"
-          placeholder="Ask any question (e.g., 'Show payout details for ORD-2026-000003')"
+          placeholder="Ask any question (e.g., 'What are the total return costs?')"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="flex-1 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
@@ -267,12 +286,12 @@ export default function FinanceQAChat({ batchId }) {
         </button>
       </form>
 
-      {/* SQL Modal */}
-      {activeSqlModal && (
+      {/* Raw JSON Modal */}
+      {activeJsonModal && (
         <RawJsonModal
-          title="Executed Read-Only SQLite Query"
-          data={{ executed_sql: activeSqlModal }}
-          onClose={() => setActiveSqlModal(null)}
+          title="Q&A Backend Debug Payload & Executed SQL"
+          data={activeJsonModal}
+          onClose={() => setActiveJsonModal(null)}
         />
       )}
     </div>
