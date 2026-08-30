@@ -129,7 +129,7 @@ def ask_finance_question(req: QARequest, db: Session = Depends(get_db)):
         exceptions = repo.get_exceptions(batch_id)
         rec_results = repo.get_reconciliation_results(batch_id)
         
-        tot_orders = len(repo.get_orders(batch_id))
+        tot_orders = len(repo.get_canonical_orders(batch_id))
         matched_cnt = len([r for r in rec_results if r.match_status in ("EXACT_MATCH", "OVERPAID")])
         tot_payout = sum(r.payment_amount for r in rec_results)
 
