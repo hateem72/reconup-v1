@@ -175,10 +175,21 @@ export default function App() {
     startEventStream(data.batch_id, 1);
   };
 
+  const mapStartNodeToStepIndex = (startNode) => {
+    if (!startNode) return 2;
+    const num = parseFloat(startNode);
+    if (num === 1.5) return 2; // Node 1.5 (Sub-Tab Filter) = Step 2
+    if (num === 2.0 || num === 2) return 3; // Node 2 (Column Mapping) = Step 3
+    if (num === 3.0 || num === 3) return 4; // Node 3 (Status Normalization) = Step 4
+    if (num === 4.0 || num === 4) return 5; // Node 4 (Integrity Audit) = Step 5
+    if (num === 5.0 || num === 5) return 6; // Node 5 (Order Reconciliation) = Step 6
+    return 2;
+  };
+
   const handleReprocessSuccess = (data) => {
     const bId = data.batch_id || activeBatchId;
-    const sNode = data.start_node ? Math.floor(data.start_node) : 2;
-    startEventStream(bId, sNode);
+    const stepIndex = mapStartNodeToStepIndex(data.start_node || 1.5);
+    startEventStream(bId, stepIndex);
   };
 
   const handleHardReset = async () => {
