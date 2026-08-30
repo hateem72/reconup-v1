@@ -1,4 +1,4 @@
-# Agentic AI Finance Controller
+# ReconUp — Autonomous AI Settlement Reconciliation Platform
 
 > **Track 04 — Autonomous AI Finance Controller Platform**
 > Run the books and cash position. An enterprise-grade, agentic AI financial operations platform built using **FastAPI**, **LangGraph**, **Local Ollama LLM (`qwen2.5:3b`)**, and **React (Vite + Tailwind)**. Automatically reconciles multi-source marketplace spreadsheets, aggregates multi-event payouts per order ID, surfaces unknown deduction patterns for human governance, and streams real-time execution logs.
@@ -9,7 +9,7 @@
 
 In e-commerce finance operations, verification capacity—not generation speed—is the primary bottleneck. Settlement reconciliation, fee deduction audits, and cash forecasting across disparate marketplace workbooks remain manually prone to human error.
 
-The **Agentic AI Finance Controller** automates multi-source settlement reconciliation, enforces deterministic P&L arithmetic, surfaces unknown marketplace deduction patterns for human verification, and persists approved rules into a persistent database registry for dynamic re-processing.
+**ReconUp** automates multi-source settlement reconciliation, enforces deterministic P&L arithmetic, surfaces unknown marketplace deduction patterns for human verification, and persists approved rules into a persistent database registry for dynamic re-processing.
 
 ### Critical Architectural Principle:
 > ⚠️ **THE LLM IS NOT THE SOURCE OF TRUTH FOR FINANCIAL CALCULATIONS.**

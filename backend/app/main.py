@@ -4,8 +4,8 @@ from app.database.database import init_db
 from app.api import uploads, reconciliation, exceptions, rules, reports, qa, health, costs, reset
 
 app = FastAPI(
-    title="Agentic AI Finance Controller",
-    description="Finance operations platform for multi-source reconciliation, profit engine, unknown pattern detection, and human governance.",
+    title="ReconUp API",
+    description="Autonomous AI Settlement Reconciliation System for multi-source reconciliation, unknown pattern detection, and human governance.",
     version="1.0.0"
 )
 

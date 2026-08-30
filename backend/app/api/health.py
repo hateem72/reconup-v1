@@ -6,7 +6,7 @@ router = APIRouter()
 def health_check():
     return {
         "status": "healthy",
-        "service": "Agentic AI Finance Controller",
+        "service": "ReconUp Engine",
         "version": "1.0.0"
     }
 
