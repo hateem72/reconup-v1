@@ -107,8 +107,15 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
         order_map[oid] = order
         ord_st_upper = str(order["orderStatus"]).upper()
 
-        if "CANCELLED" in ord_st_upper or "CANCELED" in ord_st_upper:
+        # Master Order Lifecycle Status Classification
+        if "CANCEL" in ord_st_upper:
             count_cancelled += 1
+        elif "RTO" in ord_st_upper:
+            count_rto += 1
+        elif "RETURN" in ord_st_upper or "EXCHANGE" in ord_st_upper:
+            count_returns += 1
+        else:
+            count_delivered += 1
 
         if oid in payment_map:
             pm = payment_map[oid]
@@ -125,14 +132,6 @@ def process_reconciliation(orders_raw: List[Dict[str, Any]], payments_raw: List[
                 "totalPayment": round(pm["totalPayment"], 4),
                 "matchStatus": "MATCHED"
             })
-
-            joined_upper = joined_status.upper()
-            if "DELIVERED" in joined_upper:
-                count_delivered += 1
-            if "RETURN" in joined_upper:
-                count_returns += 1
-            if "RTO" in joined_upper:
-                count_rto += 1
 
             pm["processed"] = True
         else:
