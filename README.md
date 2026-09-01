@@ -21,8 +21,9 @@
 ---
 
 ## 📑 Table of Contents
-1. [The Core Problem: E-Commerce Settlement Chaos](#-the-core-problem-e-commerce-settlement-chaos)
-2. [The Solution: ReconUp Autonomous Finance Platform](#-the-solution-reconup-autonomous-finance-platform)
+1. [The Core Problem: Multi-Marketplace Reconciliation Complexity](#-the-core-problem-multi-marketplace-reconciliation-complexity)
+2. [The Core Objective](#-the-core-objective)
+3. [The Solution: ReconUp Autonomous Finance Platform](#-the-solution-reconup-autonomous-finance-platform)
 3. [Storage, Persistence & Caching Architecture (SQLite + Redis)](#-storage-persistence--caching-architecture-sqlite--redis)
 4. [Swappable LLM Architecture: Local Ollama vs Cloud Gemini](#-swappable-llm-architecture-local-ollama-vs-cloud-gemini)
 5. [System Architecture & Flowchart](#-system-architecture--flowchart)
@@ -39,72 +40,40 @@
 
 ---
 
-## 💥 The Core Problem: E-Commerce Marketplace Settlement Chaos
+## 💥 The Core Problem: Multi-Marketplace Reconciliation Complexity
 
-In modern retail, thousands of brands sell across multiple marketplace platforms—such as **Meesho, Amazon, Flipkart, Myntra, and Shopify**.
+For a single marketplace, the finance team can understand the Order and Payment reports, identify a common field like **Order ID**, and create a fixed Excel-based reconciliation process.
 
-While placing and fulfilling orders is fast, the **post-order financial settlement cycle is an operational and accounting nightmare**.
+**But when a business sells across Amazon, Flipkart, Meesho, and other marketplaces, the problem becomes much harder.**
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                        THE REAL-WORLD FINANCIAL RECONCILIATION GAP                      │
-│                                                                                        │
-│   WHAT SELLERS EXPECT:                      WHAT MARKETPLACES ACTUALLY SEND:           │
-│   1 Order ──▶ ₹500 Payout                   1 Order ──▶ 4 Disparate Rows & Deductions: │
-│                                                         • Sale Payout:         +₹480   │
-│                                                         • Marketplace Comm.:   -₹50    │
-│                                                         • Return Shipping Fee: -₹75    │
-│                                                         • Ad Adjustment:       -₹20    │
-│                                                         ─────────────────────────────  │
-│                                                         • ACTUAL NET RECEIVED: +₹335   │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+- Each marketplace has **different file structures, column names, status values, and payment formats**.
+- Sub-tabs are nested and fragmented (e.g. *Order Payouts*, *Return Shipping*, *Advertising Deductions*, *Legal Notices*, *Summary Notes*).
+- A single order often has **multiple event lines** (Base Payout, Return Shipping Deduction, Payment Gateway Surcharge, Marketplace Commission).
+- Order statuses drift over time (e.g. an order marked `Delivered` in warehouse records later flips to `Return` or `RTO` in settlement files).
+
+So the finance team has to understand each marketplace and **build a separate reconciliation process again and again**.
+
+This makes reconciliation **slow, repetitive, and error-prone**.
 
 ---
 
-### The 4 Fatal Traps of Marketplace Reconciliation
+## 🎯 The Core Objective
 
-#### 1. 📂 Schema Anarchy & Multi-Tab Fragmentation
-Marketplaces provide settlement reports in fragmented spreadsheet workbooks (`.xlsx`, `.csv`, `.zip`). Each platform invents its own column headers:
-- `Order ID` vs `Sub Order No` vs `Merchant Reference ID` vs `Item ID`
-- `Final Settlement Amount` vs `Net Payout` vs `Bank Settlement Amount` vs `Credit Amount`
-- Multiple sub-tabs per workbook (e.g. *Order Payouts*, *Return Shipping*, *Advertising Deductions*, *Legal Notices*, *Summary Notes*).
-
-#### 2. 🔢 The Multi-Line Payout Aggregation Trap (1 Order ≠ 1 Row)
-A single customer order does not map to a single payment row. It generates **multiple event lines across multiple files and billing cycles**:
-- **Row 1**: Product Base Dispatch Payout (+₹500.00)
-- **Row 2**: Customer Return Reverse Shipping Deduction (-₹85.00)
-- **Row 3**: Payment Gateway & Handling Surcharge (-₹15.00)
-- **Row 4**: Marketplace Commission Fee (-₹40.00)
-
-> 🛑 **Why Traditional Excel/VLOOKUP Fails:**
-> Traditional `VLOOKUP` stops at the first matching row, completely ignoring trailing deduction lines. This results in **falsely reporting ₹500 revenue when the true net cash collected was only ₹360!**
-
-#### 3. 🔄 Asynchronous Status Drift (The "Delivered" Illusion)
-An order dispatched in Week 1 is marked `Delivered` in the warehouse Master Order manifest. However, 10 days later:
-- The customer initiates a return, or the courier marks it as `RTO (Return to Origin)`.
-- The subsequent marketplace settlement report classifies the event as `Return_Initiated` or `RTO_Delivered`.
-- **The Pitfall:** If finance accounting trusts the Master Manifest status alone, it reports **inflated sales revenue on orders that were actually refunded!**
-
-#### 4. 💸 Silent Cash Leakages & Unsettled Exposure
-- Marketplaces frequently levy unexplained penalty fees, wrong return weight charges, or delay remittances past contractual SLAs.
-- Non-paid Cancelled Orders get mixed into "Unsettled" lists, artificially skewing financial exposure metrics and creating phantom liabilities.
-
----
-
-### Why Existing Solutions Fail: The Verification Bottleneck
-
-| Reconciliation Approach | Why It Breaks in Practice |
-| :--- | :--- |
-| **Manual Excel & VLOOKUP** | Cannot group multi-line payout deductions; crashes on large workbooks (>100k rows); cannot parse nested sub-tabs. |
-| **Generic Python Scripts** | Brittle; breaks whenever a marketplace renames or adds a column; requires manual engineer intervention for every new file format. |
-| **Standard Cloud LLMs (Raw Prompts)** | **Financial Hallucinations**: LLMs make arithmetic rounding errors; cloud rate limits & quota caps throttle high-volume batch processing. |
+> **Can we automatically understand different marketplace reports and generate a consistent reconciliation report without manually creating a new process every time?**
 
 ---
 
 ## 💡 The Solution: ReconUp Autonomous Finance Platform
 
-**ReconUp** solves marketplace reconciliation by combining **100% deterministic financial math** with an **autonomous fleet of specialized AI agents**:
+That is what **ReconUp** solves.
+
+It uses **AI to understand the data, deterministic logic to perform the financial reconciliation, and human review for ambiguous cases.**
+
+- **AI Agents (`LangGraph` + `Ollama` / `Gemini`)**: Handle cognitive unstructured tasks like **column mapping, sheet filtering, status classification, and natural language Text-to-SQL queries**.
+- **Deterministic Python Engine**: Performs **order matching, multi-event payout aggregation, P&L calculations, and exception detection** with 100% mathematical precision.
+- **Human-in-the-Loop Governance**: Allows finance controllers to review ambiguous cases, override mappings, and persist approved rules to a persistent registry for automated future processing.
+
+> 🌟 **This gives us a reconciliation system that is flexible for different marketplaces, but 100% reliable in its financial calculations.**
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
