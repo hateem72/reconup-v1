@@ -1,24 +1,91 @@
 version: '3.8'
 
 services:
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. REDIS IN-MEMORY CACHE & PUB/SUB
+  # ─────────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: reconup_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - reconup_network
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. FASTAPI + LANGGRAPH BACKEND ENGINE
+  # ─────────────────────────────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: reconup_backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=qwen2.5:7b
-      - DATABASE_PATH=finance_controller.db
-    volumes:
-      - ./backend/data:/app/data
+      # Redis Configuration
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_ENABLED=true
+      - REDIS_TTL_SECONDS=86400
 
+      # LLM Provider Configuration ("ollama" or "gemini")
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=qwen2.5:3b
+
+      # Google Gemini API Settings (Provide in .env or docker-compose override)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash}
+
+      # Local Ollama URL (Access host machine's Ollama instance)
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+
+      # Persistence Database
+      - DATABASE_URL=sqlite:///./finance_controller.db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - backend_data:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - reconup_network
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. REACT + VITE + TAILWIND FRONTEND (NGINX)
+  # ─────────────────────────────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    container_name: reconup_frontend
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3000:80"
     depends_on:
       - backend
+    networks:
+      - reconup_network
+
+# ─────────────────────────────────────────────────────────────────────────
+# VOLUMES & NETWORKS
+# ─────────────────────────────────────────────────────────────────────────
+volumes:
+  redis_data:
+    driver: local
+  backend_data:
+    driver: local
+
+networks:
+  reconup_network:
+    driver: bridge
