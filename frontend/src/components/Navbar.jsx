@@ -1,9 +1,10 @@
 import React from 'react';
-import { Cpu, Play, RotateCcw } from 'lucide-react';
+import { Cpu, Play, RotateCcw, Sparkles } from 'lucide-react';
 
 export default function Navbar({
   onRunDemo,
   onHardReset,
+  onOpenAboutModal,
   isProcessing,
   activeBatchId
 }) {
@@ -31,7 +32,7 @@ export default function Navbar({
         </div>
 
         {/* Action Controls & Demo Buttons */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {activeBatchId && (
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-mono text-slate-700">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
@@ -39,6 +40,15 @@ export default function Navbar({
               <span className="text-blue-700 font-bold">{activeBatchId}</span>
             </div>
           )}
+
+          <button
+            onClick={onOpenAboutModal}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center gap-1.5 transition cursor-pointer"
+            title="Open ReconUp Architecture & Pipeline Guide"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="hidden sm:inline">Understand ReconUp</span>
+          </button>
 
           <button
             onClick={onRunDemo}

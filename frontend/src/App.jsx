@@ -13,8 +13,12 @@ import ReconciliationView from './components/ReconciliationView';
 import ExceptionsView from './components/ExceptionsView';
 import FinanceQAChat from './components/FinanceQAChat';
 import ReportSummaryView from './components/ReportSummaryView';
+import DocumentationView from './components/DocumentationView';
+import { Sparkles, ArrowRight, X } from 'lucide-react';
 
 export default function App() {
+  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'docs'
+  const [showWelcomeBanner, setShowWelcomeBanner] = useState(true);
   const [activeBatchId, setActiveBatchId] = useState(null);
   const [reconciliation, setReconciliation] = useState(null);
   const [exceptions, setExceptions] = useState([]);
@@ -262,17 +266,60 @@ ORD-1010\tCancelled\t200`;
     }
   };
 
+  if (currentView === 'docs') {
+    return <DocumentationView onBackToDashboard={() => setCurrentView('dashboard')} />;
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-blue-600 selection:text-white">
       {/* Top Navbar */}
       <Navbar
         onRunDemo={runSyntheticDemo}
         onHardReset={handleHardReset}
+        onOpenAboutModal={() => setCurrentView('docs')}
         isProcessing={isProcessing}
         activeBatchId={activeBatchId}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
+        {/* On-Load Interactive Architecture Notification Banner */}
+        {showWelcomeBanner && (
+          <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in duration-300 border border-blue-400/30">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-white/10 text-white flex-shrink-0">
+                <Sparkles className="w-5 h-5 text-amber-300" />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold flex items-center gap-2">
+                  Understand ReconUp — System Architecture & Engineering Guide
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-500/30 text-blue-200 border border-blue-400/30">
+                    Interactive PDF & Deep Dive
+                  </span>
+                </h3>
+                <p className="text-xs text-blue-100 mt-0.5">
+                  Explore the full system architecture diagram (PDF), 8-step pipeline breakdown, and financial accounting rules.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => setCurrentView('docs')}
+                className="px-4 py-2 rounded-xl bg-white hover:bg-blue-50 text-slate-900 font-extrabold text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>View Full Architecture Page</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setShowWelcomeBanner(false)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+                title="Dismiss Banner"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Reset Notification Banner */}
         {resetNotification && (
           <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center justify-between shadow-xs">
