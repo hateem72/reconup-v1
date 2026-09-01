@@ -7,7 +7,7 @@ export default function AgentMonitorBar({ activeStep, retainedSheetsCount, dropp
       id: 1,
       name: 'SheetRelevanceAgent',
       role: 'Sub-Tab Relevance Classifier',
-      model: 'qwen2.5:3b',
+      model: 'AI Agent',
       activeStep: 2,
       description: `Evaluates workbook sub-tabs & drops non-essential summary/disclaimer tabs`,
       badge: retainedSheetsCount ? `${retainedSheetsCount} Retained / ${droppedSheetsCount || 0} Dropped` : 'Ready'
@@ -16,7 +16,7 @@ export default function AgentMonitorBar({ activeStep, retainedSheetsCount, dropp
       id: 2,
       name: 'ColumnMappingAgent',
       role: 'LLM Schema Mapper',
-      model: 'qwen2.5:3b',
+      model: 'AI Agent',
       activeStep: 3,
       description: `Maps raw spreadsheet column headers to canonical order_id, amount, status & sku`,
       badge: 'Smart Schema Cache'
@@ -25,7 +25,7 @@ export default function AgentMonitorBar({ activeStep, retainedSheetsCount, dropp
       id: 3,
       name: 'StatusNormalizationAgent',
       role: 'Lifecycle State Classifier',
-      model: 'qwen2.5:3b',
+      model: 'AI Agent',
       activeStep: 3,
       description: `Categorizes raw status strings into Delivered, Return, RTO, Cancelled & Claim`,
       badge: '100% Status Coverage'
@@ -43,7 +43,7 @@ export default function AgentMonitorBar({ activeStep, retainedSheetsCount, dropp
       id: 5,
       name: 'ExceptionInvestigationAgent',
       role: 'Financial Governance Agent',
-      model: 'qwen2.5:3b',
+      model: 'AI Agent',
       activeStep: 5,
       description: `Surfaces financial anomalies, missing costs & fee deductions for human approval`,
       badge: 'Human-in-the-Loop'
@@ -51,24 +51,7 @@ export default function AgentMonitorBar({ activeStep, retainedSheetsCount, dropp
   ];
 
   return (
-    <div className="mb-8 rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200">
-            <Bot className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-              Autonomous AI Agent Fleet Monitor
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-50 text-blue-700 border border-blue-200">
-                5 Active Agents
-              </span>
-            </h3>
-            <p className="text-xs text-slate-500 font-medium">Live agent reasoning state & execution pipeline</p>
-          </div>
-        </div>
-      </div>
-
+    <div className="mb-8 rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         {agents.map((agent) => {
           const isActive = activeStep >= agent.activeStep;

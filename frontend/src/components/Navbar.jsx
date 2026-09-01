@@ -22,15 +22,10 @@ export default function Navbar({
               <h1 className="text-lg font-black tracking-tight text-slate-900 flex items-center gap-0.5">
                 Recon<span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Up</span>
               </h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                Track 04 Hackathon
-              </span>
+             
             </div>
             <p className="text-[11px] text-slate-500 flex items-center gap-1.5 font-medium">
-              <span>Local LLM:</span>
-              <span className="text-blue-700 font-mono font-bold">Ollama qwen2.5:3b</span>
-              <span className="text-slate-300">•</span>
-              <span>Deterministic Reconciliation Engine</span>
+              <span>Autonomous Multi-Source Reconciliation Engine & Human Governance Platform</span>
             </p>
           </div>
         </div>

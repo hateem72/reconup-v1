@@ -379,7 +379,7 @@ ORD-1010\tCancelled\t200`;
       </main>
 
       <footer className="border-t border-slate-200 py-6 text-center text-xs text-slate-500 bg-white font-medium">
-        ReconUp • Autonomous AI Settlement Reconciliation System • Powered by FastAPI, LangGraph & Local LLM (qwen2.5:3b)
+        ReconUp • Autonomous AI Settlement Reconciliation System • Enterprise Multi-Source Financial Operations
       </footer>
     </div>
   );

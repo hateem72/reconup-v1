@@ -2,10 +2,11 @@
 reference_utils/
 utils/
 
-# Private Interview Cheat-Sheet & System Reports
+# Private Interview Cheat-Sheet, System Reports & Prompt Docs
 detailedExplanation.md
 docs/detailedExplanation.md
 docs/backendAnalysisAndRoadmap.md
+docs_prompts/
 
 # Python
 __pycache__/
