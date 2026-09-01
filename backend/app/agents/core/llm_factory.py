@@ -1,24 +1,26 @@
 import os
-import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 import httpx
 from app.core.config import settings
 from app.core.logging import log_stage
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class GeminiResponse:
     content: str
 
+
 class GeminiRESTLLM:
     """
-    Lightweight REST client wrapper for Google Gemini API (v1beta).
+    Lightweight, high-speed REST client wrapper for Google Gemini API (v1beta).
+    Directly calls Google Generative AI REST endpoints with zero third-party dependencies.
     Returns an object with .content attribute to match LangChain duck typing.
     """
-    def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash", temperature: float = 0.0):
+    def __init__(self, api_key: str, model_name: str = "gemini-3.5-flash", temperature: float = 0.0):
         self.api_key = api_key
         self.model_name = model_name
         self.temperature = temperature
@@ -68,28 +70,24 @@ def get_llm(temperature: float = 0.0):
 
     if provider == "gemini":
         api_key = getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
-        model_name = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash") or "gemini-2.0-flash"
+        model_name = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash") or "gemini-3.5-flash"
 
         if not api_key:
             log_stage("AGENT", "GEMINI_API_KEY is not configured in .env. Falling back to local Ollama LLM.", level="warn")
         else:
+            # Try loading langchain-google-genai dynamically if available
             try:
-                from langchain_google_genai import ChatGoogleGenerativeAI
+                import importlib
+                mod = importlib.import_module("langchain_google_genai")
+                ChatGoogleGenerativeAI = getattr(mod, "ChatGoogleGenerativeAI")
                 log_stage("AGENT", f"Initializing Gemini LLM ({model_name}) via langchain-google-genai")
                 return ChatGoogleGenerativeAI(
                     model=model_name,
                     google_api_key=api_key,
                     temperature=temperature
                 )
-            except ImportError:
-                log_stage("AGENT", f"Initializing Gemini LLM ({model_name}) via REST API client")
-                return GeminiRESTLLM(
-                    api_key=api_key,
-                    model_name=model_name,
-                    temperature=temperature
-                )
-            except Exception as e:
-                log_stage("AGENT", f"Error initializing ChatGoogleGenerativeAI: {str(e)}. Using REST client.", level="warn")
+            except Exception:
+                log_stage("AGENT", f"Initializing Gemini LLM ({model_name}) via Native REST Client")
                 return GeminiRESTLLM(
                     api_key=api_key,
                     model_name=model_name,

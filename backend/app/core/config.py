@@ -32,7 +32,7 @@ class Settings:
     # API Keys & Models
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", "")
     GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY", "")
 
     # Ollama Local Service URL
