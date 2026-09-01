@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Grid, CheckCircle2, AlertCircle, Bot, ArrowRight, RefreshCw, Play, Code } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
+import HumanReviewGuideline from './HumanReviewGuideline';
 
 const getCanonicalFieldsForSheet = (role = '') => {
   const isPayment = role.toUpperCase().includes('PAYMENT') || role.toUpperCase().includes('SETTLEMENT');
@@ -132,6 +133,17 @@ export default function ColumnMappingView({ batchId, onNext, onReprocessSuccess 
           </span>
         </div>
       </div>
+
+      <HumanReviewGuideline
+        title="Node 2 Schema Mapping Audit Guidelines"
+        role="Canonical Field Alignment Verification"
+        guidelines={[
+          "Review the mapped columns for Order ID / Sub Order No across all active spreadsheets.",
+          "Check that Final Settlement Amount is mapped to net payout columns (e.g. 'Final Settlement Amount', 'Net Payout', 'Payment Amount').",
+          "Ensure Live Order Status is mapped to operational status fields (e.g. 'Reason for Credit Entry', 'Status', 'Event Status')."
+        ]}
+        actionHint="If an AI column mapping is inaccurate, select the correct header from the dropdown and click 'Save Overrides & Re-Process from Node 2'."
+      />
 
       <div className="space-y-6">
         {retainedSheets.length === 0 ? (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Filter, CheckCircle2, XCircle, FileSpreadsheet, Bot, ArrowRight, RefreshCw, ToggleLeft, ToggleRight, Play, Code } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
+import HumanReviewGuideline from './HumanReviewGuideline';
 
 export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess }) {
   const [nodeDetails, setNodeDetails] = useState(null);
@@ -49,16 +50,8 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
           sheet_overrides: sheetOverrides
         })
       });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({ detail: 'Failed to reprocess from Node 1.5' }));
-        console.error("Error reprocessing from Node 1.5:", errJson);
-        alert(errJson.detail || 'Failed to reprocess from Node 1.5');
-        return;
-      }
-      const data = await res.json();
-      if (onReprocessSuccess) {
-        await onReprocessSuccess(data);
-        onNext();
+      if (res.ok) {
+        if (onReprocessSuccess) onReprocessSuccess(batchId, 1.5);
       }
     } catch (err) {
       console.error("Error reprocessing from Node 1.5:", err);
@@ -67,15 +60,17 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
     }
   };
 
-  const retained = nodeDetails?.node1_5?.retained_datasets || [];
-  const dropped = nodeDetails?.node1_5?.dropped_datasets || [];
-  const allSheets = [...retained, ...dropped];
+  if (!batchId) {
+    return null;
+  }
+
+  const allSheets = nodeDetails?.node1_5?.all_sheets_evaluated || [];
 
   return (
-    <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
+    <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
       <RawJsonModal
-        title="Node 1.5 AI Sheet Relevance & Sub-Tab Filtering"
-        data={nodeDetails?.node1_5 || { retained_datasets: [], dropped_datasets: [] }}
+        title="Node 1.5 Sheet Relevance Evaluation"
+        data={nodeDetails?.node1_5 || { all_sheets_evaluated: [] }}
         isOpen={showJsonModal}
         onClose={() => setShowJsonModal(false)}
       />
@@ -108,6 +103,17 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
           </span>
         </div>
       </div>
+
+      <HumanReviewGuideline
+        title="Node 1.5 Sub-Tab Relevance Audit Guidelines"
+        role="Sub-Tab Classification Review"
+        guidelines={[
+          "Confirm that all transaction sub-tabs containing order payouts are marked as 'REQUIRED (Retained)'.",
+          "Verify that non-transactional disclaimer notes, summary tables, or empty sheets (0 rows) are marked as 'EXCLUDED (Dropped)'.",
+          "If the AI incorrectly dropped an important settlement sub-tab, click the toggle button to KEEP it and re-process from Node 1.5."
+        ]}
+        actionHint="Adjust any sheet toggle and click 'Save Overrides & Re-Process from Node 1.5' to update the pipeline."
+      />
 
       <div className="space-y-3">
         <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">

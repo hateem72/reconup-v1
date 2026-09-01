@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Filter, CheckCircle2, XCircle, RotateCcw, PackageX, Truck, PackageCheck, AlertTriangle, Clock, Layers, ArrowUpRight, DollarSign, Code } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
+import HumanReviewGuideline from './HumanReviewGuideline';
 
 export default function ReconciliationView({ reconciliation }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -99,6 +100,19 @@ export default function ReconciliationView({ reconciliation }) {
         data={reconciliation}
         isOpen={showJsonModal}
         onClose={() => setShowJsonModal(false)}
+      />
+
+      {/* Human Review Guidelines */}
+      <HumanReviewGuideline
+        title="Node 5 Order Settlement Reconciliation Audit Guidelines"
+        role="3-Way Order Matching & Net Payout Verification"
+        guidelines={[
+          "Verify the overall Match Rate (%) and confirm that Matched Orders + Unsettled Orders equal Total Master Orders.",
+          "Check multi-event payout aggregations to confirm that deductions (return shipping, marketplace commission) are netted out correctly.",
+          "Verify that Cancelled Orders without payments are isolated with ₹0.00 expected payout and do not penalize unsettled exposure.",
+          "Inspect Historical Payments (trailing disbursements from prior billing cycles) to ensure they are segregated from current batch counts."
+        ]}
+        actionHint="Use the search bar and status filter pills below to inspect individual order payouts and settlement lines."
       />
 
       {/* Executive Funnel & KPI Summary */}

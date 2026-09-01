@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, ArrowRight, CheckCircle2, DollarSign, AlertCircle, FileCheck, Layers, Play } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
+import HumanReviewGuideline from './HumanReviewGuideline';
 
 export default function StatusIntegrityView({ batchId, onNext }) {
   const [nodeDetails, setNodeDetails] = useState(null);
@@ -30,22 +31,23 @@ export default function StatusIntegrityView({ batchId, onNext }) {
   const creditsCount = node4Result.classified_credits || 0;
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-emerald-100 text-emerald-800 rounded-xl">
+    <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
+      <RawJsonModal
+        title="Node 4 AI Status Integrity Audit"
+        data={node4Result}
+        isOpen={showJsonModal}
+        onClose={() => setShowJsonModal(false)}
+      />
+
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200">
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-mono font-bold">
-                NODE 4
-              </span>
-              <h2 className="text-lg font-black text-slate-900">Status Integrity & Deduction Classification Audit</h2>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Audits order status completeness and classifies payment settlement lines into order payouts vs non-order fee deductions.
+            <h2 className="text-base font-extrabold text-slate-900">Step 5: Node 4 AI Status Integrity Audit</h2>
+            <p className="text-xs text-slate-500 font-medium">
+              Autonomous Agent <strong className="text-emerald-700">PatternDetectionAgent</strong> audits adjacent column key-value pairs, repairs missing statuses, and classifies fee deductions.
             </p>
           </div>
         </div>
@@ -66,6 +68,17 @@ export default function StatusIntegrityView({ batchId, onNext }) {
           </button>
         </div>
       </div>
+
+      <HumanReviewGuideline
+        title="Node 4 Status Integrity Audit Guidelines"
+        role="Data Quality & Integrity Verification"
+        guidelines={[
+          "Review repaired order statuses to confirm that blank/missing status lines were inferred correctly from adjacent row events.",
+          "Verify that non-order fee lines (advertising fees, commission charges) are properly segregated from core order payout lines.",
+          "Confirm that 100% status coverage is achieved before proceeding to 3-way financial reconciliation."
+        ]}
+        actionHint="Click 'Inspect Audit Data' to view exact repaired records or continue to Node 5 for 3-way reconciliation."
+      />
 
       {/* Audit Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

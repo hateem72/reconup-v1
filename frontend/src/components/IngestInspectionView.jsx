@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Database, FileSpreadsheet, Layers, Table, ArrowRight, RefreshCw, Code } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
+import HumanReviewGuideline from './HumanReviewGuideline';
 
 export default function IngestInspectionView({ batchId, onNext }) {
   const [nodeDetails, setNodeDetails] = useState(null);
@@ -35,7 +36,7 @@ export default function IngestInspectionView({ batchId, onNext }) {
   const profiles = nodeDetails?.node1?.sheet_profiles || [];
 
   return (
-    <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
+    <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm space-y-5">
       <RawJsonModal
         title="Node 1 Ingest & Header Profiling"
         data={nodeDetails?.node1 || { sheet_profiles: [] }}
@@ -43,10 +44,10 @@ export default function IngestInspectionView({ batchId, onNext }) {
         onClose={() => setShowJsonModal(false)}
       />
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 border border-blue-200">
-            <Database className="w-6 h-6" />
+          <div className="p-2.5 rounded-2xl bg-blue-50 text-blue-700 border border-blue-200">
+            <Database className="w-5 h-5" />
           </div>
           <div>
             <h2 className="text-base font-extrabold text-slate-900">Step 1: Node 1 Extracted Data & Header Profiling</h2>
@@ -71,6 +72,17 @@ export default function IngestInspectionView({ batchId, onNext }) {
           </span>
         </div>
       </div>
+
+      <HumanReviewGuideline
+        title="Node 1 Ingestion Audit Guidelines"
+        role="File Integrity & Header Verification"
+        guidelines={[
+          "Verify that all uploaded Master Order manifest and Payment Settlement workbooks are listed below.",
+          "Check that the total row counts and column dimensions match your physical source spreadsheets.",
+          "Confirm that multi-tab workbooks (e.g. .xlsx with multiple sub-sheets) have all sub-tabs successfully profiled."
+        ]}
+        actionHint="If any file failed to parse or has corrupt headers, re-upload the spreadsheet before proceeding."
+      />
 
       {loading ? (
         <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2">

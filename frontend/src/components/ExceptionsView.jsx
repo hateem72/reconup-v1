@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { AlertTriangle, CheckCircle2, ShieldAlert, Bot, DollarSign, ArrowRight, Code } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
+import HumanReviewGuideline from './HumanReviewGuideline';
 
 export default function ExceptionsView({ exceptions, batchId, onNext }) {
   const [showJsonModal, setShowJsonModal] = useState(false);
 
   return (
-    <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
+    <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
       <RawJsonModal
         title="Node 6 Human Governance & Exception Queue"
         data={{ batch_id: batchId, total_exceptions: exceptions.length, exceptions: exceptions }}
@@ -38,20 +39,32 @@ export default function ExceptionsView({ exceptions, batchId, onNext }) {
           </button>
 
           <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-800 border border-amber-200">
-            Governance Queue
+            {exceptions.length} Surfaced Items
           </span>
-
-          {onNext && (
-            <button
-              onClick={onNext}
-              className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <span>Node 7 Report</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          )}
         </div>
       </div>
+
+      <HumanReviewGuideline
+        title="Node 6 Financial Governance Audit Guidelines"
+        role="Human-in-the-Loop Risk Evaluation"
+        guidelines={[
+          "Inspect surfaced financial discrepancies, unknown deduction patterns, and payment shortfalls.",
+          "Review the proposed AI root cause analysis and financial severity ranking for each item.",
+          "Surfaced line items require human confirmation before final P&L sign-off and executive reporting."
+        ]}
+      />
+
+      {onNext && (
+        <div className="flex justify-end pt-2">
+          <button
+            onClick={onNext}
+            className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>Node 7 Report</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       <div className="space-y-4">
         {!exceptions || exceptions.length === 0 ? (

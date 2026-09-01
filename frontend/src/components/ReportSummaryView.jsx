@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Award, Download, CheckCircle2, DollarSign, Clock, ShieldCheck, FileText, Code, Ban, ShoppingBag, RotateCcw } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
+import HumanReviewGuideline from './HumanReviewGuideline';
 
 export default function ReportSummaryView({ batchId, reconciliation }) {
   const [reportData, setReportData] = useState(null);
@@ -38,15 +39,17 @@ export default function ReportSummaryView({ batchId, reconciliation }) {
 
   const fullPayload = {
     batch_id: batchId,
-    match_rate: matchRate,
-    net_payout_inr: netPayout,
-    total_orders: totalOrders,
-    delivered_orders_count: countDelivered,
-    cancelled_orders_count: countCancelled,
-    returns_rto_orders_count: countReturns,
-    total_settled_inr: totalSettled,
-    total_unsettled_inr: totalUnsettled,
     generated_at: new Date().toISOString(),
+    metrics: {
+      match_rate: matchRate,
+      total_settled_amount: totalSettled,
+      total_unsettled_amount: totalUnsettled,
+      net_payout: netPayout,
+      total_orders: totalOrders,
+      count_delivered: countDelivered,
+      count_returns: countReturns,
+      count_cancelled: countCancelled
+    },
     reconciliation_summary: reconciliation || reportData
   };
 
@@ -62,6 +65,26 @@ export default function ReportSummaryView({ batchId, reconciliation }) {
 
   return (
     <div className="space-y-6">
+      <RawJsonModal
+        title="Node 7 Final Executive Report Payload"
+        data={fullPayload}
+        isOpen={showJsonModal}
+        onClose={() => setShowJsonModal(false)}
+      />
+
+      {/* Human Review Guidelines */}
+      <HumanReviewGuideline
+        title="Node 7 Executive P&L Sign-Off Guidelines"
+        role="Finance Controller Final Authorization"
+        guidelines={[
+          "Review the final Batch Match Rate (%) and confirm it aligns with company SLA targets (>= 90%).",
+          "Audit the Net Settled Payout (INR ₹) against expected bank disbursements and cash positions.",
+          "Verify that Unsettled Financial Exposure is escalated to marketplace account managers for dispute resolution.",
+          "Download the official Executive Audit Report (JSON) to archive the audit trail for compliance and ERP sync."
+        ]}
+        actionHint="Click 'Export Audit Report' below to download the immutable JSON audit ledger."
+      />
+
       {/* Top Executive Header */}
       <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-8 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-6 border border-slate-800">
         <div className="space-y-2">

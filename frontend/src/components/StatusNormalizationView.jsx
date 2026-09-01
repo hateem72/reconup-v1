@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, Bot, ArrowRight, RefreshCw, Play, Tag, Code } from 'lucide-react';
 import RawJsonModal from './RawJsonModal';
+import HumanReviewGuideline from './HumanReviewGuideline';
 
 const CANONICAL_CATEGORIES = [
   'Delivered',
@@ -77,6 +78,10 @@ export default function StatusNormalizationView({ batchId, onNext, onReprocessSu
     }
   };
 
+  if (!batchId) {
+    return null;
+  }
+
   const statusMappings = nodeDetails?.node3?.status_mappings || {};
   const rawStatusEntries = Object.entries(statusMappings);
 
@@ -117,6 +122,18 @@ export default function StatusNormalizationView({ batchId, onNext, onReprocessSu
           </span>
         </div>
       </div>
+
+      <HumanReviewGuideline
+        title="Node 3 Status Classification Audit Guidelines"
+        role="Operational Lifecycle Normalization"
+        guidelines={[
+          "Verify that return-related raw strings (e.g. 'Customer Return', 'Return_Initiated') are mapped to 'Return'.",
+          "Ensure Return-to-Origin strings (e.g. 'RTO_DELIVERED', 'RTO_IN_TRANSIT') are mapped to 'RTO'.",
+          "Check that order cancellations (e.g. 'Cancelled by Customer', 'Auto_Cancel') are mapped to 'Cancelled'.",
+          "Verify that active completed deliveries are mapped to 'Delivered'."
+        ]}
+        actionHint="If a status string was misclassified, select the correct canonical state and click 'Save Overrides & Re-Process from Node 3'."
+      />
 
       <div className="space-y-4">
         <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">

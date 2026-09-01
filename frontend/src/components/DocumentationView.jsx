@@ -288,7 +288,8 @@ export default function DocumentationView({ onBackToDashboard }) {
                   color: 'blue',
                   input: 'Master Order Sheet (.xlsx/.csv) + Multiple Payment Settlement Files (.xlsx/.csv/.zip)',
                   output: 'Exact header profiles, row counts, and active batch execution context',
-                  details: 'Parses binary spreadsheet workbooks, extracts headers with exact case sensitivity, measures dataset dimensions, and initializes the in-memory batch state store.'
+                  details: 'Parses binary spreadsheet workbooks, extracts headers with exact case sensitivity, measures dataset dimensions, and initializes the in-memory batch state store.',
+                  human_guideline: 'Verify that all uploaded files parsed cleanly, sheet row counts match physical files, and all sub-tabs were successfully discovered.'
                 },
                 {
                   node: 'Node 1.5',
@@ -297,7 +298,8 @@ export default function DocumentationView({ onBackToDashboard }) {
                   color: 'indigo',
                   input: 'Discovered workbook sub-tabs with sample row previews and header sets',
                   output: 'Retained transaction sheets vs Dropped summary notes/disclaimers',
-                  details: 'Evaluates each sheet to distinguish order-level financial transaction lines from empty disclaimer notices (0 rows) and isolated ad fee notes.'
+                  details: 'Evaluates each sheet to distinguish order-level financial transaction lines from empty disclaimer notices (0 rows) and isolated ad fee notes.',
+                  human_guideline: 'Confirm that all order-level settlement sheets are marked KEEP and disclaimer tabs are EXCLUDED. Override any tab state if needed before re-processing.'
                 },
                 {
                   node: 'Node 2',
@@ -306,7 +308,8 @@ export default function DocumentationView({ onBackToDashboard }) {
                   color: 'purple',
                   input: 'Raw spreadsheet column headers across disparate marketplace formats',
                   output: 'Canonical schema mapping (order_id, amount, status, sku, quantity, payment_date)',
-                  details: 'Autonomous LLM agent maps disparate raw columns to standard schema. Uses a persistent Smart Schema Cache to skip LLM latency on recurring file templates.'
+                  details: 'Autonomous LLM agent maps disparate raw columns to standard schema. Uses a persistent Smart Schema Cache to skip LLM latency on recurring file templates.',
+                  human_guideline: 'Review the mapped columns for Order ID, Payout Amount, and Live Order Status. Use the dropdowns to correct any misaligned columns before proceeding.'
                 },
                 {
                   node: 'Node 3',
@@ -315,7 +318,8 @@ export default function DocumentationView({ onBackToDashboard }) {
                   color: 'cyan',
                   input: 'Raw status strings (e.g. "Delivered", "Customer Return", "RTO_IN_TRANSIT")',
                   output: 'Normalized canonical statuses: Delivered, Return, RTO, Cancelled, Shipped, Claim, Exchange',
-                  details: 'Standardizes disparate marketplace status descriptions into canonical operational lifecycle states for downstream accounting.'
+                  details: 'Standardizes disparate marketplace status descriptions into canonical operational lifecycle states for downstream accounting.',
+                  human_guideline: 'Check that unique raw status strings are categorized correctly into standard lifecycle states (Delivered, Return, RTO, Cancelled).'
                 },
                 {
                   node: 'Node 4',
@@ -324,7 +328,8 @@ export default function DocumentationView({ onBackToDashboard }) {
                   color: 'emerald',
                   input: 'Canonical dataset with potential missing statuses or co-dependent row states',
                   output: '100% repaired status coverage; separated fee deductions from order payouts',
-                  details: 'Dynamically inspects adjacent row key-value pairs to repair missing or co-dependent order statuses. Categorizes fee deductions into separate accounting buckets.'
+                  details: 'Dynamically inspects adjacent row key-value pairs to repair missing or co-dependent order statuses. Categorizes fee deductions into separate accounting buckets.',
+                  human_guideline: 'Audit repaired status rows to ensure inferred lifecycle states are accurate and verify that non-order fee charges are segregated from order payouts.'
                 },
                 {
                   node: 'Node 5',
@@ -333,7 +338,8 @@ export default function DocumentationView({ onBackToDashboard }) {
                   color: 'emerald',
                   input: 'Normalized Master Orders vs Aggregated Multi-Event Payment Lines',
                   output: 'Matched orders (Net Payout ₹), Unsettled orders, Cancelled orders (₹0), Historical payments',
-                  details: 'Matches orders by Order ID, aggregates multi-event payouts (disbursement - deductions), enforces Payment Status Privilege, and isolates Cancelled orders from unsettled exposure.'
+                  details: 'Matches orders by Order ID, aggregates multi-event payouts (disbursement - deductions), enforces Payment Status Privilege, and isolates Cancelled orders from unsettled exposure.',
+                  human_guideline: 'Review the overall Match Rate (%), verify multi-line payout netting, and confirm that Cancelled orders (₹0.00) do not penalize unsettled exposure.'
                 },
                 {
                   node: 'Node 6',
@@ -342,7 +348,8 @@ export default function DocumentationView({ onBackToDashboard }) {
                   color: 'amber',
                   input: 'Surfaced financial exceptions & Natural language auditor questions',
                   output: 'Approved rules persisted to registry; Instant Text-to-SQL financial answers',
-                  details: 'Surfaces financial anomalies into an interactive governance queue. Includes a 100% read-only Text-to-SQL Settlement Q&A Co-Pilot with 6s timeout protection.'
+                  details: 'Surfaces financial anomalies into an interactive governance queue. Includes a 100% read-only Text-to-SQL Settlement Q&A Co-Pilot with 6s timeout protection.',
+                  human_guideline: 'Inspect surfaced financial anomalies and decide whether to APPROVE or REJECT each exception into the persistent Rule Registry for future automation.'
                 },
                 {
                   node: 'Node 7',
@@ -351,7 +358,8 @@ export default function DocumentationView({ onBackToDashboard }) {
                   color: 'slate',
                   input: 'Consolidated reconciliation results & human-approved governance rules',
                   output: 'Executive P&L summary, audited match rate (%), live manifest status counts, Raw JSON export',
-                  details: 'Generates executive financial summary metrics, match rate percentages, and raw JSON export modals for total audit traceability.'
+                  details: 'Generates executive financial summary metrics, match rate percentages, and raw JSON export modals for total audit traceability.',
+                  human_guideline: 'Perform final sign-off on the batch P&L, verify cash disbursements against bank accounts, and export the official JSON audit report for ERP sync.'
                 }
               ].map((n, idx) => (
                 <div key={idx} className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
@@ -368,6 +376,14 @@ export default function DocumentationView({ onBackToDashboard }) {
                   </div>
 
                   <p className="text-xs text-slate-600 leading-relaxed">{n.details}</p>
+
+                  {/* Human Review Guidelines in Yellow Card */}
+                  <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-950 text-xs flex items-start gap-2.5">
+                    <span className="px-1.5 py-0.5 rounded bg-amber-100 font-bold text-[10px] text-amber-900 border border-amber-300 flex-shrink-0 mt-0.5">
+                      Human Review
+                    </span>
+                    <p className="text-amber-900/90 font-medium leading-relaxed">{n.human_guideline}</p>
+                  </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
