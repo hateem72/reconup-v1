@@ -1,35 +1,79 @@
 # ReconUp — Autonomous AI Settlement Reconciliation Platform
 
-> **Track 04 — AI Finance Controller Platform**  
-> *Closing the Finance-Ops Loop across Multi-Source Marketplace Datasets with Measured Accuracy & Zero Financial Hallucinations.*
+<div align="center">
 
-Built with **FastAPI**, **LangGraph**, **Local Ollama LLM (`qwen2.5:3b`)**, **SQLite**, and a **Modern White-Theme React Dashboard (Vite + Tailwind CSS)**.
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-State_Machine-orange?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain.com)
+[![Ollama](https://img.shields.io/badge/Ollama-Local_LLM-black?style=for-the-badge&logo=ollama&logoColor=white)](https://ollama.com)
+[![Google Gemini](https://img.shields.io/badge/Google_Gemini-3.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
+[![React](https://img.shields.io/badge/React_18-Vite_Tailwind-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
+[![Docker](https://img.shields.io/badge/Docker_Compose-Multi_Container-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com)
+[![Redis](https://img.shields.io/badge/Redis_7-In--Memory_Cache-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
+
+**Track 04 — Autonomous AI Finance Controller Platform**  
+*Closing the Finance-Ops Loop across Multi-Source Marketplace Datasets with Measured Accuracy & Zero Financial Hallucinations.*
+
+[Interactive PDF Architecture Flowchart](frontend/public/architecture.pdf) • [Quick Start Guide](#-quick-start--how-to-run) • [8-Step Pipeline](#-autonomous-8-step-pipeline-breakdown) • [Benchmarks](#-measured-performance-benchmarks)
+
+</div>
 
 ---
 
 ## 📖 Table of Contents
 1. [Executive Summary & Vision](#-executive-summary--vision)
-2. [Critical Architectural Principles](#-critical-architectural-principles)
-3. [System Architecture & Flowcharts](#-system-architecture--flowcharts)
-4. [Autonomous 8-Step Pipeline Workflow](#-autonomous-8-step-pipeline-workflow)
-5. [Key Platform Features & Innovations](#-key-platform-features--innovations)
-6. [Settlement Q&A Co-Pilot (Text-to-SQL System)](#-settlement-qa-co-pilot-text-to-sql-system)
-7. [Measured Performance Benchmarks](#-measured-performance-benchmarks)
-8. [API Reference Endpoint Summary](#-api-reference-endpoint-summary)
-9. [Quick Start & Local Setup](#-quick-start--local-setup)
+2. [Why Swappable LLM Architecture? (Local Ollama vs Cloud APIs)](#-why-swappable-llm-architecture-local-ollama-vs-cloud-apis)
+3. [Critical Architectural Principles](#-critical-architectural-principles)
+4. [System Architecture & Flowcharts](#-system-architecture--flowcharts)
+5. [Interactive Architecture PDF](#-interactive-architecture-pdf)
+6. [Autonomous 8-Step Pipeline Breakdown](#-autonomous-8-step-pipeline-breakdown)
+7. [Specialized Financial Accounting & Privilege Rules](#-specialized-financial-accounting--privilege-rules)
+8. [Settlement Q&A Co-Pilot (Text-to-SQL System)](#-settlement-qa-co-pilot-text-to-sql-system)
+9. [Measured Performance Benchmarks](#-measured-performance-benchmarks)
+10. [Quick Start — How to Run](#-quick-start--how-to-run)
+    - [Option A: One-Command Docker Compose (Recommended)](#option-a-one-command-docker-compose-recommended)
+    - [Option B: Local Manual Setup (Backend + Frontend)](#option-b-local-manual-setup)
+11. [API Reference Endpoint Summary](#-api-reference-endpoint-summary)
 
 ---
 
 ## 💡 Executive Summary & Vision
 
-In e-commerce finance operations, **verification capacity—not generation speed—is the bottleneck**. Multi-channel settlement reconciliation, marketplace fee audits, and cash position forecasting across disparate spreadsheets (Meesho, Amazon, Flipkart, Shopify) remain heavily manual and error-prone.
+In e-commerce marketplace finance operations, **verification capacity—not generation speed—is the primary bottleneck**. Multi-channel settlement reconciliation, marketplace fee deduction audits, and cash position forecasting across disparate spreadsheets (Meesho, Amazon, Flipkart, Shopify) remain heavily manual, slow, and error-prone.
 
 **ReconUp** automates multi-source settlement reconciliation by pairing deterministic financial algorithms with autonomous AI agents:
-- **Multi-File Selection & Ingestion**: Ingests master order manifests alongside multiple multi-tab payment settlement workbooks simultaneously (`.xlsx`, `.csv`, `.zip`).
+- **Multi-File Ingestion**: Ingests master order manifests alongside multiple multi-tab payment settlement workbooks simultaneously (`.xlsx`, `.csv`, `.zip`).
 - **3-Way Net Payout Reconciliation**: Aggregates multi-event payment lines per Order ID to calculate exact **Net Settlement Payouts** (in INR ₹).
 - **Payment Status Privilege & Accounting Rules**: Enforces payment event supremacy over initial dispatch statuses while isolating cancelled orders to ensure zero penalization of unsettled monetary exposure.
 - **Human-in-the-Loop Governance Queue**: Surfaces unknown marketplace deduction patterns for human verification and persists approved rules into a rule registry database.
 - **Interactive Settlement Q&A Co-Pilot**: Answers natural language financial queries using a 100% read-only Text-to-SQL engine with 6s timeout protection and collapsible backend debug trace panels.
+
+---
+
+## ⚡ Why Swappable LLM Architecture? (Local Ollama vs Cloud APIs)
+
+> 💡 **KEY ARCHITECTURAL HIGHLIGHT:**
+> The LLM layer in ReconUp is engineered with a **swappable, multi-provider abstraction**. Cloud LLM APIs (such as Google Gemini, Groq, or OpenAI) enforce strict rate limits, token quotas, and daily caps on free tiers that inevitably throttle or fail during intensive batch testing and developer iterations.
+>
+> To solve this, **ReconUp integrates Local Ollama (`qwen2.5:3b`) out of the box** — empowering developers and auditors to run unlimited, zero-cost, offline reconciliation pipelines with **zero rate limits, zero quota throttling, and complete data privacy**.
+>
+> When desired, enterprise teams can **instantaneously swap to Google Gemini (`gemini-3.5-flash`, `gemini-3.6-flash`, `gemini-3.7-flash`)** by setting `LLM_PROVIDER=gemini` in `backend/.env`.
+
+```
+                  ┌──────────────────────────────────────────────┐
+                  │       Swappable LLM Provider Factory         │
+                  │        (backend/app/agents/core/)            │
+                  └──────────────────────┬───────────────────────┘
+                                         │
+                 ┌───────────────────────┴───────────────────────┐
+                 ▼                                               ▼
+┌──────────────────────────────────────┐       ┌──────────────────────────────────────┐
+│       LOCAL OLLAMA (Default)         │       │          GOOGLE GEMINI API           │
+│ • Model: qwen2.5:3b                  │       │ • Model: gemini-3.5-flash            │
+│ • 100% Offline & Zero API Cost       │       │ • High-Speed Cloud Reasoning         │
+│ • Unlimited Testing & No Rate Limits │       │ • Toggle via LLM_PROVIDER=gemini     │
+│ • Complete Enterprise Data Privacy   │       │ • Native REST + LangChain Fallback   │
+└──────────────────────────────────────┘       └──────────────────────────────────────┘
+```
 
 ---
 
@@ -46,7 +90,7 @@ In e-commerce finance operations, **verification capacity—not generation speed
            ┌────────────────────────┴────────────────────────┐
            ▼                                                 ▼
 ┌───────────────────────────────────────┐       ┌───────────────────────────────────────┐
-│   LOCAL LLM AGENTS (qwen2.5:3b)       │       │    DETERMINISTIC PYTHON ENGINE        │
+│       AI AGENTS (Gemini / Ollama)     │       │    DETERMINISTIC PYTHON ENGINE        │
 │ • Sub-Tab Relevance Classification    │       │ • Multi-Event Payout Aggregation (₹)  │
 │ • Column Header Schema Mapping        │       │ • 3-Way Order ID Matching (100%)      │
 │ • Raw Status Categorization           │       │ • P&L Arithmetic & Unsettled Exposure │
@@ -61,6 +105,7 @@ In e-commerce finance operations, **verification capacity—not generation speed
 ```mermaid
 graph TD
     UI[White-Theme React Dashboard] -->|REST API & SSE Stream| FastAPI[FastAPI Backend Server]
+    FastAPI --> Redis[(Redis In-Memory Cache)]
     FastAPI --> Engine[Deterministic Finance Engine]
     FastAPI --> LangGraph[LangGraph State Machine Pipeline]
     
@@ -75,7 +120,9 @@ graph TD
     SpecializedAgents --> PatternAgent[PatternDetectionAgent]
     SpecializedAgents --> QAAgent[FinanceQACoPilot]
     
-    SpecializedAgents --> Ollama[Local Ollama LLM qwen2.5:3b]
+    SpecializedAgents --> LLMFactory[Swappable LLM Factory]
+    LLMFactory -->|Default| Ollama[Local Ollama qwen2.5:3b]
+    LLMFactory -->|Optional| Gemini[Google Gemini 3.5 Flash]
     
     FastAPI --> DB[(SQLite Database Persistence)]
     DB --> Batches[batches]
@@ -88,7 +135,15 @@ graph TD
 
 ---
 
-## 🔄 Autonomous 8-Step Pipeline Workflow
+## 📄 Interactive Architecture PDF
+
+ReconUp includes an official high-resolution vector system architecture flowchart:
+- 📥 **Direct Download / View**: [`frontend/public/architecture.pdf`](frontend/public/architecture.pdf)
+- 🖥️ **In-App Interactive Viewer**: Available directly inside the frontend with **Zoom In (+)**, **Zoom Out (-)**, **Reset Zoom**, **Full-Screen Preview**, and **Open in Tab** controls.
+
+---
+
+## 🔄 Autonomous 8-Step Pipeline Breakdown
 
 ```mermaid
 graph LR
@@ -101,87 +156,46 @@ graph LR
     Step7 --> Step8[7. Executive Report]
 ```
 
-### Detailed Node Execution Breakdown:
-
-1. **Node 1: Ingest & Exact Header Profiling**  
-   Parses all uploaded workbooks (`.xlsx`, `.csv`, `.zip`), extracts exact column headers, measures dataset dimensions, and creates batch execution context.
-
-2. **Node 1.5: Sub-Tab Filtering (`SheetRelevanceAgent`)**  
-   Autonomous AI Agent evaluates every discovered sub-tab. Retains transaction sheets with granular order lines while dropping empty disclaimers (0 rows) and isolated ad summaries.
-
-3. **Node 2: LLM Column Mapping (`ColumnMappingAgent`)**  
-   Maps raw spreadsheet headers to canonical domain schema (`order_id`, `amount`, `status`, `sku`, `quantity`, `payment_date`). Features a **Smart Schema Cache** to eliminate latency on recurring file formats.
-
-4. **Node 3: Status Normalization (`StatusNormalizationAgent`)**  
-   Normalizes raw status strings across all sheets into standardized canonical categories (`Delivered`, `Return`, `RTO`, `Cancelled`, `Shipped`, `Claim`, `Exchange`).
-
-5. **Node 4: AI Status Integrity Audit (`PatternDetectionAgent`)**  
-   Dynamically inspects adjacent row key-value pairs to repair missing or co-dependent order statuses, achieving 100% status coverage. Classifies payment lines into order payouts vs non-order fee deductions.
-
-6. **Node 5: Deterministic 3-Way Order Reconciliation Engine**  
-   Matches Master Order Sheet anchors against Payment Settlement events. Aggregates multi-line payouts per order ID to calculate Net Payout Amount. Enforces **Payment Status Privilege** and isolates **Cancelled Orders** from unsettled exposure.
-
-7. **Node 6: Exception Governance Queue & Interactive AI Q&A**  
-   Surfaces financial discrepancies into an interactive human governance queue with severity ranking. Features an interactive Settlement Q&A Co-Pilot powered by Text-to-SQL.
-
-8. **Node 7: Executive Audit Report Generation**  
-   Consolidates overall match rates, net settlement payouts, order manifest status breakdowns, and audit compliance metrics. Includes a **Raw JSON Data** modal for full human auditability.
+| Step | Node Name | Type | Description | Human Review Guidelines |
+| :--- | :--- | :--- | :--- | :--- |
+| **Node 1** | **Ingest & Header Profiling** | Deterministic | Parses all uploaded `.xlsx`, `.csv`, `.zip` files, extracts headers, and profiles dataset dimensions. | Confirm that all uploaded manifest and settlement files parsed cleanly with expected row counts. |
+| **Node 1.5** | **Sub-Tab Filtering (`SheetRelevanceAgent`)** | AI Agent | Evaluates workbook sub-sheets, retaining order transaction data and dropping 0-row disclaimers. | Verify that transaction sheets are marked `KEEP` and empty summary notes are `EXCLUDE`. Toggle override if needed. |
+| **Node 2** | **Schema Mapping (`ColumnMappingAgent`)** | AI + Cache | Maps raw columns to canonical fields (`order_id`, `amount`, `status`, `sku`). Features Smart Schema Cache. | Check mapped columns for Order ID and Final Settlement Amount. Correct any column dropdown before re-processing. |
+| **Node 3** | **Status Normalization (`StatusNormalizationAgent`)** | AI Agent | Normalizes raw status strings across marketplaces into canonical states (`Delivered`, `Return`, `RTO`, `Cancelled`). | Check that return/RTO strings map to `Return`/`RTO` and cancellations map to `Cancelled`. |
+| **Node 4** | **AI Status Integrity Audit (`PatternDetectionAgent`)** | AI Integrity | Inspects adjacent row key-value pairs to repair missing statuses and separates fee deductions from payouts. | Review repaired status rows to ensure inferred lifecycle states are accurate and fees are segregated. |
+| **Node 5** | **3-Way Order Reconciliation Engine** | Deterministic | Matches Master Orders against multi-event payment disbursements. Calculates Net Payout per Order ID. | Verify match rate (%), multi-event netting, and confirm Cancelled orders (₹0) do not penalize unsettled exposure. |
+| **Node 6** | **Exception Governance Queue & Q&A** | Human-in-the-Loop | Surfaces financial discrepancies into an interactive governance queue with Text-to-SQL Q&A co-pilot. | Inspect surfaced anomalies and `APPROVE` or `REJECT` each rule into the persistent Rule Registry. |
+| **Node 7** | **Executive Financial P&L Report** | Final Audit | Generates overall match rates, net settlement payouts (₹), and exports immutable JSON audit ledgers. | Perform final sign-off on the batch P&L, verify cash disbursements, and export the official JSON audit ledger. |
 
 ---
 
-## ✨ Key Platform Features & Innovations
+## ⚖️ Specialized Financial Accounting & Privilege Rules
 
-- **Multi-File Payment Workbook Selection**: Simultaneously upload multiple payment settlement files alongside Master Order manifests.
-- **Payment Status Privilege Rule**: Gives primary priority to Payment Settlement Sheet event statuses (`Return`, `RTO`, `Refund`) over initial order dispatch statuses when an order ID is present in payment records.
-- **Cancelled Order Accounting Protection**: Isolates cancelled orders into a dedicated dataset (`cancelledOrders`) with ₹0.00 expected payout, preventing cancelled orders from penalizing unsettled monetary exposure.
-- **Human-in-the-Loop Rule Registry**: Finance managers can inspect surfaced fee deduction patterns, approve rules, and re-process the pipeline dynamically.
-- **Real-Time Live Audit Log Streaming**: Streams Server-Sent Events (SSE) directly from `audit_events` into an embedded Terminal Console UI (`GET /api/batches/{id}/stream`).
-- **Modern High-Contrast White Theme UI**: Built with Tailwind CSS, featuring soft slate containers, crisp typography, and interactive step workflow navigation.
+### 1. Payment Status Privilege Rule (Downstream Event Supremacy)
+- **The Challenge**: An order dispatched and marked `Delivered` in the initial Master Order manifest may subsequently be returned or refunded during the marketplace payment settlement cycle.
+- **The Rule**: When an Order ID is present in both sheets, **privilege is given to the Payment Settlement event status FIRST**. If the payment sheet reports `Return`, `Refund`, or `RTO`, the order is classified as a Return/RTO, preventing false over-reporting of delivered orders.
+
+### 2. Cancelled Orders Accounting Separation
+- **The Challenge**: Cancelled orders never generate revenue or expected marketplace payouts. Placing non-paid cancelled orders into unsettled lists falsely inflates monetary exposure.
+- **The Rule**: Cancelled orders with no payment rows are isolated into a dedicated `cancelledOrders` dataset with ₹0.00 expected payout. They are displayed with a distinct badge and do not penalize unsettled exposure.
+
+### 3. Historical Payment Lines Isolation
+- **The Challenge**: Marketplace settlement workbooks often include trailing disbursements for older orders not present in the current master order manifest.
+- **The Rule**: These trailing payments are classified into `missingInOrder` (`HISTORICAL_PAYMENT`). They are tracked as extra cash collected and exempted from active order manifest counts.
 
 ---
 
 ## 💬 Settlement Q&A Co-Pilot (Text-to-SQL System)
 
-The integrated Settlement Q&A Co-Pilot enables auditors to ask natural language questions (e.g. *"What are the total return costs?"*, *"Show orders with payment shortfalls"*).
+The integrated Settlement Q&A Co-Pilot enables auditors to ask natural language questions (e.g. *"What is my total net payout?"*, *"Show orders with payment shortfalls"*).
 
-### Backend Data Flow:
 ```
-           ┌──────────────────────────────────────────────┐
-           │ User Question Intake & Prompt Pills          │
-           └──────────────────────┬───────────────────────┘
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────┐
-           │ 1. Text-to-SQL Query Generation (Local LLM)   │
-           │    • Schema: orders, payments, rec_results   │
-           └──────────────────────┬───────────────────────┘
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────┐
-           │ 2. Read-Only Security Guard & 6s Timeout     │
-           │    • Enforces SELECT / WITH only             │
-           │    • Rejects DROP / DELETE / UPDATE / ALTER  │
-           └──────────────────────┬───────────────────────┘
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────┐
-           │ 3. SQLite DB Query & Fuzzy Search Fallback   │
-           └──────────────────────┬───────────────────────┘
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────┐
-           │ 4. Executive Answer Synthesis (Local LLM)    │
-           └──────────────────────┬───────────────────────┘
-                                  │
-                                  ▼
-           ┌──────────────────────────────────────────────┐
-           │ Formatted Response + Backend Debug Trace     │
-           └──────────────────────────────────────────────┘
+User Question ──▶ Local LLM (Text-to-SQL) ──▶ Read-Only Guard (SELECT only) ──▶ 6s Timeout Execution ──▶ SQLite DB ──▶ Formatted Answer + Debug Trace Drawer
 ```
 
-- **100% Read-Only Guard**: Validates SQL statements to prevent data mutation or injection.
+- **100% Read-Only Guard**: Enforces strict `SELECT / WITH` syntax only. Rejects `DROP, DELETE, UPDATE`.
 - **6s Hard Timeout Safeguard**: Executes LLM calls with thread timeouts so the UI never stalls.
-- **🔍 Backend Debug Trace Panel**: Every response features a collapsible drawer displaying the exact executed SQL query, row counts, and raw JSON payload modal.
+- **🔍 Backend Debug Trace Panel**: Collapsible drawer showing executed SQL, execution duration, and raw JSON payload modal.
 
 ---
 
@@ -192,7 +206,6 @@ Run the benchmark evaluation script locally:
 python -m app.evaluation.run_benchmark
 ```
 
-### Measured Benchmark Output (100 Synthetic Records):
 ```text
 ========================================
 RECONUP PLATFORM BENCHMARK
@@ -216,6 +229,104 @@ Throughput:             31,779.85 records/sec
 
 ---
 
+## 🚀 Quick Start — How to Run
+
+### Prerequisites
+- **Docker & Docker Compose** (for Docker setup) OR **Python 3.11+** & **Node.js 18+** (for manual setup)
+- **[Ollama](https://ollama.com/)** with model `qwen2.5:3b` (`ollama run qwen2.5:3b`) OR a Google Gemini API Key
+
+---
+
+### Option A: One-Command Docker Compose (Recommended)
+
+Run the entire platform (Redis + FastAPI Backend + React Nginx Frontend) with a single command:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/hateem72/razorpay.git
+cd razorpay
+
+# 2. Start all multi-container services
+docker compose up --build
+```
+
+- **Frontend Dashboard**: `http://localhost:3000`
+- **Backend API & Swagger Docs**: `http://localhost:8000/docs`
+- **Redis In-Memory Cache**: `localhost:6379`
+
+To run in detached background mode:
+```bash
+docker compose up -d
+```
+To stop all containers:
+```bash
+docker compose down
+```
+
+---
+
+### Option B: Local Manual Setup
+
+#### 1. Backend Setup (FastAPI Server):
+```bash
+cd backend
+
+# Create virtual environment & install requirements
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# Start FastAPI dev server
+uvicorn app.main:app --reload --port 8000
+```
+- Backend live at: `http://localhost:8000` (Swagger docs at `http://localhost:8000/docs`).
+
+#### 2. Running Backend Unit Tests:
+```bash
+set PYTHONPATH=backend && pytest backend/tests
+```
+
+#### 3. Frontend Setup (React + Vite Dashboard):
+```bash
+cd frontend
+
+# Install dependencies & start Vite dev server
+npm install
+npm run dev
+```
+- Frontend Dashboard live at: `http://localhost:3000`.
+
+---
+
+## ⚙️ Environment Variables Configuration (`backend/.env`)
+
+```env
+# =============================================================================
+# RECONUP BACKEND CONFIGURATION
+# =============================================================================
+
+# REDIS CACHE (Auto-fallback to in-memory Python RAM cache if Redis is offline)
+REDIS_URL=redis://localhost:6379/0
+REDIS_ENABLED=true
+REDIS_TTL_SECONDS=86400
+
+# LLM PROVIDER SELECTION ("ollama" or "gemini")
+LLM_PROVIDER=ollama
+LLM_MODEL=qwen2.5:3b
+
+# GOOGLE GEMINI API (Used when LLM_PROVIDER=gemini)
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.5-flash
+
+# LOCAL OLLAMA URL
+OLLAMA_BASE_URL=http://localhost:11434
+
+# DATABASE PERSISTENCE
+DATABASE_URL=sqlite:///./finance_controller.db
+```
+
+---
+
 ## 🔌 API Reference Endpoint Summary
 
 | HTTP Method | Endpoint Path | Description |
@@ -233,62 +344,9 @@ Throughput:             31,779.85 records/sec
 
 ---
 
-## 🚀 Quick Start & Local Setup
+<div align="center">
 
-### Prerequisites
-- **Python 3.11+**
-- **Node.js 18+**
-- **[Ollama](https://ollama.com/)** with model `qwen2.5:3b` installed (`ollama run qwen2.5:3b`)
+**ReconUp • Enterprise Multi-Source Financial Operations Platform**  
+*Built for the Track 04 Autonomous AI Finance Controller Hackathon.*
 
----
-
-### 1. Backend Setup (FastAPI Server)
-
-```bash
-# Navigate to backend directory
-cd backend
-
-# Install dependencies
-python -m pip install -r requirements.txt
-
-# Start FastAPI dev server
-python -m uvicorn app.main:app --reload --port 8000
-```
-- API Server running at: `http://localhost:8000`
-- Interactive Swagger Docs at: `http://localhost:8000/docs`
-
-#### Running Backend Unit Tests:
-```bash
-cmd /c "set PYTHONPATH=backend && pytest backend/tests"
-```
-
----
-
-### 2. Frontend Setup (React + Vite Dashboard)
-
-```bash
-# Navigate to frontend directory
-cd frontend
-
-# Install npm packages
-npm install
-
-# Start Vite dev server
-npm run dev
-```
-- Dashboard live at: `http://localhost:3000`
-
----
-
-## 🎮 Interactive Demonstration Walkthrough
-
-1. Open **`http://localhost:3000`** in your browser.
-2. Click **"Run Synthetic Demo"** in the top navigation bar (or select custom `.xlsx`/`.csv` files).
-3. Watch real-time execution in the **Terminal Log Console**.
-4. Step through the 8-node stepper:
-   - Inspect dropped vs retained tabs in **Node 1.5**.
-   - Review AI column header mappings in **Node 2**.
-   - Check canonical status categorizations in **Node 3**.
-   - Audit 3-way order payouts & net settled amounts in **Node 5**.
-   - Test natural language queries in the **Settlement Q&A Console** (Node 6).
-   - Inspect total net payouts and download JSON audit reports in **Node 7**.
+</div>
