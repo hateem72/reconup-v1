@@ -29,9 +29,10 @@ class Settings:
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ollama").lower()
     LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen2.5:3b")
 
-    # API Keys
+    # API Keys & Models
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", "")
-    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY", "")
 
     # Ollama Local Service URL
