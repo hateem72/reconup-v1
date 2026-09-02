@@ -26,10 +26,16 @@ venv/
 
 # Uploaded data
 uploads/
-*.xlsx
 *.xls
-*.csv
 *.zip
+
+# Ignore loose data files, but explicitly track inputs-sample benchmark datasets
+*.xlsx
+*.csv
+!inputs-sample/
+!inputs-sample/**
+!inputs-sample/*.xlsx
+!inputs-sample/*.csv
 
 # Frontend
 node_modules/
