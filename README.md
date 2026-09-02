@@ -24,19 +24,20 @@
 1. [The Core Problem: Multi-Marketplace Reconciliation Complexity](#-the-core-problem-multi-marketplace-reconciliation-complexity)
 2. [The Core Objective](#-the-core-objective)
 3. [The Solution: ReconUp Autonomous Finance Platform](#-the-solution-reconup-autonomous-finance-platform)
-3. [Storage, Persistence & Caching Architecture (SQLite + Redis)](#-storage-persistence--caching-architecture-sqlite--redis)
-4. [Swappable LLM Architecture: Local Ollama vs Cloud Gemini](#-swappable-llm-architecture-local-ollama-vs-cloud-gemini)
-5. [System Architecture & Flowchart](#-system-architecture--flowchart)
-6. [Interactive Architecture PDF Viewer](#-interactive-architecture-pdf-viewer)
-7. [8-Step Autonomous Pipeline Walkthrough](#-8-step-autonomous-pipeline-walkthrough)
-8. [Specialized Financial Accounting & Privilege Rules](#-specialized-financial-accounting--privilege-rules)
-9. [Settlement Q&A Co-Pilot (Text-to-SQL Engine)](#-settlement-qa-co-pilot-text-to-sql-engine)
-10. [Measured Performance Benchmarks](#-measured-performance-benchmarks)
-11. [Quick Start — How to Run](#-quick-start--how-to-run)
+4. [Storage, Persistence & Caching Architecture (SQLite + Redis)](#-storage-persistence--caching-architecture-sqlite--redis)
+5. [Swappable LLM Architecture: Local Ollama vs Cloud Gemini](#-swappable-llm-architecture-local-ollama-vs-cloud-gemini)
+6. [System Architecture & Flowchart](#-system-architecture--flowchart)
+7. [Interactive Architecture PDF Viewer](#-interactive-architecture-pdf-viewer)
+8. [8-Step Autonomous Pipeline Walkthrough](#-8-step-autonomous-pipeline-walkthrough)
+9. [Specialized Financial Accounting & Privilege Rules](#-specialized-financial-accounting--privilege-rules)
+10. [Settlement Q&A Co-Pilot (Text-to-SQL Engine)](#-settlement-qa-co-pilot-text-to-sql-engine)
+11. [Measured Performance Benchmarks](#-measured-performance-benchmarks)
+12. [Sample Test Datasets (`inputs-sample/`)](#-sample-test-datasets-inputs-sample)
+13. [Quick Start — How to Run](#-quick-start--how-to-run)
     - [Method 1: One-Command Docker Compose (Recommended)](#method-1-one-command-docker-compose-recommended)
     - [Method 2: Local Manual Setup (Backend + Frontend)](#method-2-local-manual-setup)
-12. [Environment Configuration Reference (`.env`)](#-environment-configuration-reference-env)
-13. [API Reference Endpoints](#-api-reference-endpoints)
+14. [Environment Configuration Reference (`.env`)](#-environment-configuration-reference-env)
+15. [API Reference Endpoints](#-api-reference-endpoints)
 
 ---
 
@@ -283,6 +284,18 @@ Processing time:        3.15 ms
 Throughput:             31,779.85 records/sec
 ========================================
 ```
+
+---
+
+## 📂 Sample Test Datasets (`inputs-sample/`)
+
+To test the end-to-end reconciliation pipeline immediately, sample order manifest and payment settlement workbooks are provided in the [`inputs-sample/`](inputs-sample/) directory:
+
+- 📄 **`inputs-sample/Order_sheet1.xlsx`**: Master Order Manifest spreadsheet with order IDs, SKU catalogs, dispatch quantities, customer details, and listed prices.
+- 📊 **`inputs-sample/Payment_sheet1.xlsx`**: Multi-Tab Payment Settlement workbook containing line-item disbursements, marketplace commission fees, return shipping charges, and non-transactional disclaimer sub-tabs.
+
+> 💡 **Note for Evaluators & Testers:**  
+> *These are sample benchmark datasets. You can generate additional synthetic or custom test sheets with the help of AI by adding more columns, deduction categories, and line-item rows to test edge cases, schema flexibility, and large-scale throughput deeply.*
 
 ---
 

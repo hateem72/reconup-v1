@@ -3,22 +3,24 @@ import { Filter, CheckCircle2, XCircle, FileSpreadsheet, Bot, ArrowRight, Refres
 import RawJsonModal from './RawJsonModal';
 import HumanReviewGuideline from './HumanReviewGuideline';
 
-export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess }) {
-  const [nodeDetails, setNodeDetails] = useState(null);
+export default function SheetDiscoveryView({ batchId, data, initialData, onNext, onReprocessSuccess }) {
+  const [nodeDetails, setNodeDetails] = useState(data || initialData || null);
   const [sheetOverrides, setSheetOverrides] = useState({});
   const [isReprocessing, setIsReprocessing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showJsonModal, setShowJsonModal] = useState(false);
 
+  const effectiveBatchId = batchId || (typeof window !== 'undefined' ? localStorage.getItem('reconup_active_batch_id') : null);
+
   const fetchDetails = async () => {
-    if (!batchId) return;
+    if (!effectiveBatchId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/batches/${batchId}/node-details`);
+      const res = await fetch(`/api/batches/${effectiveBatchId}/node-details`);
       if (res.ok) {
-        const data = await res.json();
-        setNodeDetails(data);
-        const initialOverrides = data.human_overrides?.sheet_overrides || {};
+        const payload = await res.json();
+        setNodeDetails(payload);
+        const initialOverrides = payload.human_overrides?.sheet_overrides || {};
         setSheetOverrides(prev => ({ ...initialOverrides, ...prev }));
       }
     } catch (err) {
@@ -29,8 +31,11 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
   };
 
   useEffect(() => {
+    if (data || initialData) {
+      setNodeDetails(data || initialData);
+    }
     fetchDetails();
-  }, [batchId]);
+  }, [effectiveBatchId, data, initialData]);
 
   const handleToggleSheet = (filename, currentVerdict) => {
     const isAiRetained = currentVerdict === 'REQUIRED' || currentVerdict === 'KEEP' || currentVerdict === 'RETAINED';
@@ -43,10 +48,10 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
   };
 
   const handleApplyOverridesAndReprocess = async () => {
-    if (!batchId) return;
+    if (!effectiveBatchId) return;
     setIsReprocessing(true);
     try {
-      const res = await fetch(`/api/batches/${batchId}/reprocess`, {
+      const res = await fetch(`/api/batches/${effectiveBatchId}/reprocess`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -55,7 +60,7 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
         })
       });
       if (res.ok) {
-        if (onReprocessSuccess) onReprocessSuccess(batchId, 1.5);
+        if (onReprocessSuccess) onReprocessSuccess(effectiveBatchId, 1.5);
       }
     } catch (err) {
       console.error("Error reprocessing from Node 1.5:", err);
@@ -64,38 +69,60 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
     }
   };
 
-  // Robust, defensive sub-tab resolution across all possible backend schemas
+  // Robust, defensive sub-tab resolution across all possible backend schemas and direct payloads
   const getSubTabList = () => {
-    if (!nodeDetails) return [];
+    const src = nodeDetails || data || initialData;
+    if (!src) return [];
     
-    if (Array.isArray(nodeDetails)) return nodeDetails;
+    if (Array.isArray(src)) return src;
 
-    const n15 = nodeDetails.node1_5 || nodeDetails.node_1_5 || nodeDetails.pipeline_store?.node1_5_result || nodeDetails.pipeline_store?.node1_5 || nodeDetails;
-    
-    if (Array.isArray(n15.all_sheets_evaluated) && n15.all_sheets_evaluated.length > 0) {
-      return n15.all_sheets_evaluated;
-    }
-    
-    const retained = Array.isArray(n15.retained_datasets) ? n15.retained_datasets : (Array.isArray(nodeDetails.retained_datasets) ? nodeDetails.retained_datasets : []);
-    const dropped = Array.isArray(n15.dropped_datasets) ? n15.dropped_datasets : (Array.isArray(nodeDetails.dropped_datasets) ? nodeDetails.dropped_datasets : []);
-    
+    // 1. Check all direct and nested array locations for all_sheets_evaluated
+    const allEvaluated = [
+      src.node1_5?.all_sheets_evaluated,
+      src.all_sheets_evaluated,
+      src.pipeline_store?.node1_5_result?.all_sheets_evaluated,
+      src.data?.node1_5?.all_sheets_evaluated,
+      src.data?.all_sheets_evaluated
+    ].find(arr => Array.isArray(arr) && arr.length > 0);
+
+    if (allEvaluated) return allEvaluated;
+
+    // 2. Check all direct and nested locations for retained_datasets and dropped_datasets
+    const retained = [
+      src.node1_5?.retained_datasets,
+      src.retained_datasets,
+      src.pipeline_store?.node1_5_result?.retained_datasets,
+      src.data?.node1_5?.retained_datasets,
+      src.data?.retained_datasets
+    ].find(arr => Array.isArray(arr) && arr.length > 0) || [];
+
+    const dropped = [
+      src.node1_5?.dropped_datasets,
+      src.dropped_datasets,
+      src.pipeline_store?.node1_5_result?.dropped_datasets,
+      src.data?.node1_5?.dropped_datasets,
+      src.data?.dropped_datasets
+    ].find(arr => Array.isArray(arr) && arr.length > 0) || [];
+
     if (retained.length > 0 || dropped.length > 0) {
       return [...retained, ...dropped];
     }
-    
-    if (Array.isArray(nodeDetails.all_sheets_evaluated) && nodeDetails.all_sheets_evaluated.length > 0) {
-      return nodeDetails.all_sheets_evaluated;
-    }
 
-    // Fallback to Node 1 sheet profiles if Node 1.5 hasn't completed
-    const node1Sheets = nodeDetails.node1?.sheet_profiles || nodeDetails.sheet_profiles || [];
+    // 3. Fallback to Node 1 sheet profiles if Node 1.5 hasn't populated yet
+    const node1Sheets = [
+      src.node1?.sheet_profiles,
+      src.sheet_profiles,
+      src.data?.node1?.sheet_profiles,
+      src.data?.sheet_profiles
+    ].find(arr => Array.isArray(arr) && arr.length > 0) || [];
+
     if (node1Sheets.length > 0) {
       return node1Sheets.map(s => ({
         filename: s.sheet_name || s.filename || s.name || "Workbook Sheet",
         role: s.role || (s.is_master ? "MASTER ORDER SHEET" : "PAYMENT SETTLEMENT SHEET"),
-        row_count: s.row_count || s.rows || 0,
-        verdict: s.row_count > 0 ? "REQUIRED" : "NOT_REQUIRED",
-        rationale: s.row_count > 0 ? "Retained transaction sheet with line-item data." : "Empty disclaimer sub-tab (0 rows).",
+        row_count: s.row_count !== undefined ? s.row_count : (s.rows || 0),
+        verdict: (s.row_count || s.rows || 0) > 0 ? "REQUIRED" : "NOT_REQUIRED",
+        rationale: (s.row_count || s.rows || 0) > 0 ? "Retained transaction sheet with line-item data." : "Empty disclaimer sub-tab (0 rows).",
         headers: s.exact_headers || s.columns || []
       }));
     }
@@ -104,7 +131,7 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
   };
 
   const allSheets = getSubTabList();
-  const rawModalPayload = nodeDetails?.node1_5 || nodeDetails || { all_sheets: allSheets };
+  const rawModalPayload = nodeDetails || data || initialData || { all_sheets: allSheets };
 
   return (
     <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
@@ -175,8 +202,9 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
             <span>Loading discovered sub-tabs from Node 1.5...</span>
           </div>
         ) : allSheets.length === 0 ? (
-          <div className="p-6 text-center text-slate-500 text-xs font-bold bg-slate-50 rounded-xl border border-slate-200">
-            No sub-tabs discovered yet. Please ensure files were uploaded in Step 1.
+          <div className="p-8 text-center text-slate-500 text-xs font-bold bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+            <p className="text-slate-700">No sub-tabs discovered yet for this batch.</p>
+            <p className="text-[11px] text-slate-400 font-normal">Please upload spreadsheet files in Step 1 or click "Run Synthetic Demo" to view the complete sub-tab discovery matrix.</p>
           </div>
         ) : (
           allSheets.map((sheet, idx) => {

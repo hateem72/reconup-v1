@@ -51,15 +51,6 @@ export default function Navbar({
           </button>
 
           <button
-            onClick={onRunDemo}
-            disabled={isProcessing}
-            className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 flex items-center gap-2 transition disabled:opacity-50 cursor-pointer"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>Run Synthetic Demo</span>
-          </button>
-
-          <button
             onClick={onHardReset}
             disabled={isProcessing}
             className="px-3 py-2 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer"
