@@ -7,30 +7,34 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
   const [nodeDetails, setNodeDetails] = useState(null);
   const [sheetOverrides, setSheetOverrides] = useState({});
   const [isReprocessing, setIsReprocessing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [showJsonModal, setShowJsonModal] = useState(false);
 
-  useEffect(() => {
+  const fetchDetails = async () => {
     if (!batchId) return;
-
-    const fetchDetails = async () => {
-      try {
-        const res = await fetch(`/api/batches/${batchId}/node-details`);
-        if (res.ok) {
-          const data = await res.json();
-          setNodeDetails(data);
-          const initialOverrides = data.human_overrides?.sheet_overrides || {};
-          setSheetOverrides(initialOverrides);
-        }
-      } catch (err) {
-        console.error("Error fetching sub-tab details:", err);
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/batches/${batchId}/node-details`);
+      if (res.ok) {
+        const data = await res.json();
+        setNodeDetails(data);
+        const initialOverrides = data.human_overrides?.sheet_overrides || {};
+        setSheetOverrides(prev => ({ ...initialOverrides, ...prev }));
       }
-    };
+    } catch (err) {
+      console.error("Error fetching sub-tab details:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchDetails();
   }, [batchId]);
 
   const handleToggleSheet = (filename, currentVerdict) => {
-    const activeState = sheetOverrides[filename] || (currentVerdict === 'REQUIRED' ? 'KEEP' : 'EXCLUDE');
+    const isAiRetained = currentVerdict === 'REQUIRED' || currentVerdict === 'KEEP' || currentVerdict === 'RETAINED';
+    const activeState = sheetOverrides[filename] || (isAiRetained ? 'KEEP' : 'EXCLUDE');
     const newState = activeState === 'KEEP' ? 'EXCLUDE' : 'KEEP';
     setSheetOverrides(prev => ({
       ...prev,
@@ -60,20 +64,53 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
     }
   };
 
-  if (!batchId) {
-    return null;
-  }
+  // Robust, defensive sub-tab resolution across all possible backend schemas
+  const getSubTabList = () => {
+    if (!nodeDetails) return [];
+    
+    if (Array.isArray(nodeDetails)) return nodeDetails;
 
-  const n15 = nodeDetails?.node1_5 || nodeDetails?.pipeline_store?.node1_5_result || nodeDetails || {};
-  const retained = n15.retained_datasets || [];
-  const dropped = n15.dropped_datasets || [];
-  const allSheets = n15.all_sheets_evaluated || [...retained, ...dropped];
+    const n15 = nodeDetails.node1_5 || nodeDetails.node_1_5 || nodeDetails.pipeline_store?.node1_5_result || nodeDetails.pipeline_store?.node1_5 || nodeDetails;
+    
+    if (Array.isArray(n15.all_sheets_evaluated) && n15.all_sheets_evaluated.length > 0) {
+      return n15.all_sheets_evaluated;
+    }
+    
+    const retained = Array.isArray(n15.retained_datasets) ? n15.retained_datasets : (Array.isArray(nodeDetails.retained_datasets) ? nodeDetails.retained_datasets : []);
+    const dropped = Array.isArray(n15.dropped_datasets) ? n15.dropped_datasets : (Array.isArray(nodeDetails.dropped_datasets) ? nodeDetails.dropped_datasets : []);
+    
+    if (retained.length > 0 || dropped.length > 0) {
+      return [...retained, ...dropped];
+    }
+    
+    if (Array.isArray(nodeDetails.all_sheets_evaluated) && nodeDetails.all_sheets_evaluated.length > 0) {
+      return nodeDetails.all_sheets_evaluated;
+    }
+
+    // Fallback to Node 1 sheet profiles if Node 1.5 hasn't completed
+    const node1Sheets = nodeDetails.node1?.sheet_profiles || nodeDetails.sheet_profiles || [];
+    if (node1Sheets.length > 0) {
+      return node1Sheets.map(s => ({
+        filename: s.sheet_name || s.filename || s.name || "Workbook Sheet",
+        role: s.role || (s.is_master ? "MASTER ORDER SHEET" : "PAYMENT SETTLEMENT SHEET"),
+        row_count: s.row_count || s.rows || 0,
+        verdict: s.row_count > 0 ? "REQUIRED" : "NOT_REQUIRED",
+        rationale: s.row_count > 0 ? "Retained transaction sheet with line-item data." : "Empty disclaimer sub-tab (0 rows).",
+        headers: s.exact_headers || s.columns || []
+      }));
+    }
+
+    return [];
+  };
+
+  const allSheets = getSubTabList();
+  const rawModalPayload = nodeDetails?.node1_5 || nodeDetails || { all_sheets: allSheets };
 
   return (
     <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
       <RawJsonModal
         title="Node 1.5 Sheet Relevance Evaluation"
-        data={n15}
+        data={rawModalPayload}
         isOpen={showJsonModal}
         onClose={() => setShowJsonModal(false)}
       />
@@ -93,6 +130,15 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
 
         <div className="flex items-center gap-2">
           <button
+            onClick={fetchDetails}
+            disabled={loading}
+            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+            title="Refresh Node 1.5 Data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-600' : ''}`} />
+          </button>
+
+          <button
             onClick={() => setShowJsonModal(true)}
             className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-mono font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
             title="View Raw Backend JSON Payload"
@@ -102,7 +148,7 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
           </button>
 
           <span className="px-3 py-1.5 rounded-full text-xs font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-            Interactive Human Control Active
+            {allSheets.length} Sub-Tabs Discovered
           </span>
         </div>
       </div>
@@ -111,8 +157,8 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
         title="Node 1.5 Sub-Tab Relevance Audit Guidelines"
         role="Sub-Tab Classification Review"
         guidelines={[
-          "Confirm that all transaction sub-tabs containing order payouts are marked as 'REQUIRED (Retained)'.",
-          "Verify that non-transactional disclaimer notes, summary tables, or empty sheets (0 rows) are marked as 'EXCLUDED (Dropped)'.",
+          "Confirm that all transaction sub-tabs containing order payouts are marked as 'KEEP (INCLUDED)'.",
+          "Verify that non-transactional disclaimer notes, summary tables, or empty sheets (0 rows) are marked as 'EXCLUDE (DROPPED)'.",
           "If the AI incorrectly dropped an important settlement sub-tab, click the toggle button to KEEP it and re-process from Node 1.5."
         ]}
         actionHint="Adjust any sheet toggle and click 'Save Overrides & Re-Process from Node 1.5' to update the pipeline."
@@ -123,14 +169,19 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
           Discovered Workbook Sub-Tabs ({allSheets.length}) — Toggle to Keep or Exclude:
         </h3>
 
-        {allSheets.length === 0 ? (
+        {loading && allSheets.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 text-xs font-bold flex items-center justify-center gap-2 bg-slate-50 rounded-xl border border-slate-200">
+            <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
+            <span>Loading discovered sub-tabs from Node 1.5...</span>
+          </div>
+        ) : allSheets.length === 0 ? (
           <div className="p-6 text-center text-slate-500 text-xs font-bold bg-slate-50 rounded-xl border border-slate-200">
-            No sub-tabs discovered. Please upload files in Step 1.
+            No sub-tabs discovered yet. Please ensure files were uploaded in Step 1.
           </div>
         ) : (
           allSheets.map((sheet, idx) => {
-            const fname = sheet.filename;
-            const isAiRetained = sheet.verdict === 'REQUIRED';
+            const fname = sheet.filename || sheet.sheet_name || sheet.name || `Sheet_${idx + 1}`;
+            const isAiRetained = sheet.verdict === 'REQUIRED' || sheet.verdict === 'KEEP' || sheet.verdict === 'RETAINED';
             const currentOverride = sheetOverrides[fname];
             const isKept = currentOverride ? currentOverride === 'KEEP' : isAiRetained;
             const isModified = currentOverride && ((isAiRetained && currentOverride === 'EXCLUDE') || (!isAiRetained && currentOverride === 'KEEP'));
@@ -145,7 +196,7 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
                 }`}
               >
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <FileSpreadsheet className={`w-4 h-4 ${isKept ? 'text-emerald-600' : 'text-rose-600'}`} />
                     <span className="text-xs font-extrabold text-slate-900">{fname}</span>
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 text-slate-800">
@@ -159,7 +210,7 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
                     )}
                   </div>
                   <p className="text-xs text-slate-600 font-medium">
-                    AI Rationale: {sheet.rationale} ({sheet.row_count || 0} rows)
+                    AI Rationale: {sheet.rationale || (isKept ? 'Retained transaction sheet.' : 'Dropped non-essential tab.')} ({sheet.row_count !== undefined ? sheet.row_count : (sheet.rows || 0)} rows)
                   </p>
                 </div>
 
@@ -216,3 +267,4 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
     </div>
   );
 }
+
