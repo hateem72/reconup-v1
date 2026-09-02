@@ -64,13 +64,16 @@ export default function SheetDiscoveryView({ batchId, onNext, onReprocessSuccess
     return null;
   }
 
-  const allSheets = nodeDetails?.node1_5?.all_sheets_evaluated || [];
+  const n15 = nodeDetails?.node1_5 || nodeDetails?.pipeline_store?.node1_5_result || nodeDetails || {};
+  const retained = n15.retained_datasets || [];
+  const dropped = n15.dropped_datasets || [];
+  const allSheets = n15.all_sheets_evaluated || [...retained, ...dropped];
 
   return (
     <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm space-y-6">
       <RawJsonModal
         title="Node 1.5 Sheet Relevance Evaluation"
-        data={nodeDetails?.node1_5 || { all_sheets_evaluated: [] }}
+        data={n15}
         isOpen={showJsonModal}
         onClose={() => setShowJsonModal(false)}
       />
